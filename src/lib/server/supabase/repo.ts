@@ -4,6 +4,8 @@ import type {
 	Difficulty,
 	Evaluation,
 	McqAnswers,
+	Note,
+	NoteImage,
 	PromptName,
 	PromptSetting,
 	Quiz,
@@ -266,6 +268,111 @@ export async function getContextSources(db: SupabaseClient): Promise<SourceMater
 		.order('created_at', { ascending: false });
 	if (error) throw new Error(`getContextSources failed: ${error.message}`);
 	return (data ?? []) as SourceMaterial[];
+}
+
+/* ----------------------------------------------------------------------------
+ * Notes
+ * ------------------------------------------------------------------------- */
+
+/** Public Supabase Storage bucket holding note image attachments. */
+export const NOTE_IMAGE_BUCKET = 'note-images';
+
+export async function listNotes(db: SupabaseClient): Promise<Note[]> {
+	const { data, error } = await db
+		.from('notes')
+		.select('*')
+		.order('pinned', { ascending: false })
+		.order('updated_at', { ascending: false });
+	if (error) throw new Error(`listNotes failed: ${error.message}`);
+	return (data ?? []) as Note[];
+}
+
+export async function getNote(db: SupabaseClient, id: string): Promise<Note | null> {
+	const { data, error } = await db.from('notes').select('*').eq('id', id).maybeSingle();
+	if (error) throw new Error(`getNote failed: ${error.message}`);
+	return (data as Note) ?? null;
+}
+
+export async function createNote(
+	db: SupabaseClient,
+	input: {
+		id?: string;
+		title: string;
+		category: string;
+		content: string;
+		images: NoteImage[];
+		pinned?: boolean;
+	}
+): Promise<Note> {
+	const id = input.id ?? newId();
+	const { data, error } = await db
+		.from('notes')
+		.insert({
+			id,
+			title: input.title,
+			category: input.category,
+			content: input.content,
+			images: input.images,
+			pinned: input.pinned ?? false
+		})
+		.select('*')
+		.single();
+	if (error) throw new Error(`createNote failed: ${error.message}`);
+	return data as Note;
+}
+
+export async function updateNote(
+	db: SupabaseClient,
+	id: string,
+	patch: Partial<Pick<Note, 'title' | 'category' | 'content' | 'images' | 'pinned'>>
+): Promise<void> {
+	const { error } = await db
+		.from('notes')
+		.update({ ...patch, updated_at: new Date().toISOString() })
+		.eq('id', id);
+	if (error) throw new Error(`updateNote failed: ${error.message}`);
+}
+
+export async function deleteNote(db: SupabaseClient, id: string): Promise<void> {
+	// Images are stored inline in the note's HTML and live under the `id/` folder,
+	// so clear the whole folder rather than tracking individual references.
+	const { data: objects } = await db.storage.from(NOTE_IMAGE_BUCKET).list(id);
+	if (objects?.length) {
+		await deleteNoteImages(
+			db,
+			objects.map((o) => `${id}/${o.name}`)
+		);
+	}
+	const { error } = await db.from('notes').delete().eq('id', id);
+	if (error) throw new Error(`deleteNote failed: ${error.message}`);
+}
+
+/** Uploads image files to storage under `prefix/` and returns their metadata. */
+export async function uploadNoteImages(
+	db: SupabaseClient,
+	prefix: string,
+	files: File[]
+): Promise<NoteImage[]> {
+	const out: NoteImage[] = [];
+	for (const file of files) {
+		if (!file || file.size === 0) continue;
+		const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_') || 'image';
+		const path = `${prefix}/${newId()}-${safe}`;
+		const body = await file.arrayBuffer();
+		const { error } = await db.storage
+			.from(NOTE_IMAGE_BUCKET)
+			.upload(path, body, { contentType: file.type || 'application/octet-stream', upsert: false });
+		if (error) throw new Error(`uploadNoteImages failed: ${error.message}`);
+		const { data } = db.storage.from(NOTE_IMAGE_BUCKET).getPublicUrl(path);
+		out.push({ path, url: data.publicUrl, name: file.name });
+	}
+	return out;
+}
+
+export async function deleteNoteImages(db: SupabaseClient, paths: string[]): Promise<void> {
+	if (paths.length === 0) return;
+	const { error } = await db.storage.from(NOTE_IMAGE_BUCKET).remove(paths);
+	if (error) throw new Error(`deleteNoteImages failed: ${error.message}`);
 }
 
 /* ----------------------------------------------------------------------------

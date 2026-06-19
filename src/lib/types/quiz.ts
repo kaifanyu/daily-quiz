@@ -121,6 +121,24 @@ export interface SourceMaterial {
 	include_in_context?: boolean;
 }
 
+/** An image attachment stored in Supabase Storage and referenced by a note. */
+export interface NoteImage {
+	path: string;
+	url: string;
+	name: string;
+}
+
+export interface Note {
+	id: string;
+	created_at: string;
+	updated_at: string;
+	title: string;
+	category: string;
+	content: string;
+	images: NoteImage[];
+	pinned: boolean;
+}
+
 export interface PromptSetting {
 	id: string;
 	created_at: string;
