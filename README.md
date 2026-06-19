@@ -216,4 +216,5 @@ yarn check      # svelte-check / type-check
 yarn format     # prettier --write
 ```
 #   d a i l y - q u i z  
+ #   d a i l y - q u i z  
  
