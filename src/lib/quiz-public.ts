@@ -2,8 +2,8 @@ import type { ChoiceId, Difficulty, MCQChoice, Quiz } from '$lib/types/quiz';
 
 /**
  * Answer-free view of a quiz that is safe to send to the browser BEFORE
- * submission. The correct choice, explanations, ideal answers, rubric, and the
- * reading section are all withheld until the learner submits.
+ * submission. The correct choice, explanations, ideal answers, and rubric are
+ * all withheld until the learner submits.
  */
 export interface PublicMCQQuestion {
 	id: string;

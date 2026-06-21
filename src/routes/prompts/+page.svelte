@@ -14,18 +14,6 @@
 		quiz_generation: {
 			label: 'Quiz generation',
 			desc: 'System prompt used to write the multiple-choice and short-answer questions.'
-		},
-		reading_generation: {
-			label: 'Reading generation',
-			desc: 'System prompt for the ~1000-word reading passage and comprehension questions.'
-		},
-		short_answer_evaluation: {
-			label: 'Short-answer evaluation',
-			desc: 'How the AI critiques your written answers and corrects misconceptions.'
-		},
-		weak_topic_extraction: {
-			label: 'Weak-topic extraction',
-			desc: 'How weak topics and the overall learning summary are derived after submission.'
 		}
 	};
 </script>

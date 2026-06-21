@@ -1,14 +1,9 @@
 import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
 import type { RequestHandler } from './$types';
-import { getAiServices } from '$lib/server/services';
+import { getDb } from '$lib/server/services';
 import { evaluateSubmission } from '$lib/server/ai/evaluate';
-import {
-	getQuiz,
-	saveEvaluation,
-	saveSubmission,
-	saveWeakTopics
-} from '$lib/server/supabase/repo';
+import { getQuiz, saveEvaluation, saveSubmission } from '$lib/server/supabase/repo';
 
 const bodySchema = z.object({
 	mcq_answers: z.record(z.string(), z.union([z.enum(['A', 'B', 'C', 'D']), z.null()])).default({}),
@@ -23,22 +18,15 @@ export const POST: RequestHandler = async ({ request, params, platform }) => {
 	const quizId = params.id;
 
 	try {
-		const services = getAiServices(platform);
-		const { db, client, model } = services;
+		const db = getDb(platform);
 
 		const quiz = await getQuiz(db, quizId);
 		if (!quiz) error(404, 'Quiz not found.');
 
 		const { mcq_answers, short_answers } = parsed.data;
 		const submission = await saveSubmission(db, quizId, mcq_answers, short_answers);
-		const evaluation = await evaluateSubmission(
-			{ client, model, db },
-			quiz,
-			mcq_answers,
-			short_answers
-		);
+		const evaluation = evaluateSubmission(quiz, mcq_answers, short_answers);
 		await saveEvaluation(db, quizId, submission.id, evaluation);
-		await saveWeakTopics(db, evaluation.weak_topics, quizId, submission.id);
 
 		return json({ submission_id: submission.id });
 	} catch (e) {

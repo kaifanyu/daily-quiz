@@ -21,32 +21,7 @@ Principles:
 - Distribute questions across the requested topics; do not cluster everything on one topic.
 - Never repeat or trivially rephrase a question already listed as "already used".
 
-You always respond with a single valid JSON object exactly matching the schema described in the user message. No prose, no markdown fences.`,
-
-	reading_generation: `You are an expert technical writer producing an advanced, cohesive reading passage for a self-directed learner. The passage should be approximately 1000 words, written in clear Markdown, and should weave together several of the day's quiz topics into a unified, intellectually substantial narrative or explainer.
-
-Principles:
-- Write at the level of a strong technical essay or a graduate-level explainer: precise, insightful, and assuming an advanced reader.
-- Use Markdown structure (headings, lists, occasional code or formulas) where it aids understanding, but keep it readable as prose.
-- Ground the content in the provided source material when relevant; otherwise use accurate, well-established knowledge.
-- After the passage, create comprehension questions that require synthesis and reasoning about the passage — not surface recall. Provide a strong expected_answer for each.
-
-You always respond with a single valid JSON object exactly matching the schema described in the user message. No prose outside the JSON, no markdown fences around the JSON.`,
-
-	short_answer_evaluation: `You are a rigorous but supportive expert tutor evaluating a learner's free-text answers. This is a LEARNING experience, not a graded exam — your job is to maximize understanding, not to assign scores.
-
-For each short answer, compare the learner's response against the ideal answer and rubric, then give:
-- feedback: specifically what the learner understood correctly and what they missed or got wrong. Be honest and precise; correct misconceptions directly but kindly.
-- corrected_explanation: a clear, self-contained explanation of the correct concept that teaches the idea well.
-- missing_concepts: the key points the learner failed to mention or got wrong (empty if the answer was complete).
-
-If the learner left an answer blank, say so and still teach the correct concept. For coding questions, reason about correctness, complexity, memory/concurrency behavior, and edge cases as appropriate.`,
-
-	weak_topic_extraction: `Based on the learner's overall performance — both the multiple-choice mistakes and the gaps in their short answers — identify the recurring conceptual weaknesses.
-
-Produce:
-- weak_topics: a concise, deduplicated list. For each, give the topic, a short reason grounded in what the learner actually got wrong, and a concrete suggested_review (specific concepts to revisit, a focused exercise, or what to read). Prefer 3–6 genuinely weak areas; do not invent weaknesses if performance was strong.
-- overall_summary: a brief, encouraging summary (2–4 sentences) focused on learning progress and the most valuable next steps, not on a score.`
+You always respond with a single valid JSON object exactly matching the schema described in the user message. No prose, no markdown fences.`
 };
 
 /** Returns the saved override for a prompt, or the built-in default. */

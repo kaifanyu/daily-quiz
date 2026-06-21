@@ -13,7 +13,8 @@ import type {
 	QuizSubmission,
 	ShortAnswers,
 	SourceMaterial,
-	WeakTopic
+	TopicCategory,
+	TopicEntry
 } from '$lib/types/quiz';
 
 const newId = () => crypto.randomUUID();
@@ -123,8 +124,6 @@ export async function saveEvaluation(
 		quiz_id: quizId,
 		submission_id: submissionId,
 		evaluation_json: evaluation,
-		weak_topics: evaluation.weak_topics,
-		overall_summary: evaluation.overall_summary,
 		mcq_correct: evaluation.mcq_correct,
 		mcq_total: evaluation.mcq_total
 	});
@@ -143,29 +142,6 @@ export async function getEvaluationForSubmission(
 		.maybeSingle();
 	if (error) throw new Error(`getEvaluationForSubmission failed: ${error.message}`);
 	return data ? (data.evaluation_json as Evaluation) : null;
-}
-
-/* ----------------------------------------------------------------------------
- * Weak topics (denormalized for the dashboard)
- * ------------------------------------------------------------------------- */
-
-export async function saveWeakTopics(
-	db: SupabaseClient,
-	topics: WeakTopic[],
-	sourceQuizId: string,
-	sourceSubmissionId: string
-): Promise<void> {
-	if (topics.length === 0) return;
-	const rows = topics.map((t) => ({
-		id: newId(),
-		topic: t.topic,
-		reason: t.reason,
-		suggested_review: t.suggested_review,
-		source_quiz_id: sourceQuizId,
-		source_submission_id: sourceSubmissionId
-	}));
-	const { error } = await db.from('weak_topics').insert(rows);
-	if (error) throw new Error(`saveWeakTopics failed: ${error.message}`);
 }
 
 /* ----------------------------------------------------------------------------
@@ -376,6 +352,106 @@ export async function deleteNoteImages(db: SupabaseClient, paths: string[]): Pro
 }
 
 /* ----------------------------------------------------------------------------
+ * Topic bank (weighted, two-level: category mix + topic-within-category)
+ * ------------------------------------------------------------------------- */
+
+export type CategoryWithTopics = TopicCategory & { topics: TopicEntry[] };
+
+/**
+ * Returns every category with its topics nested, ordered for display. Pass
+ * `enabledOnly` for the sampler (drops disabled categories and topics).
+ */
+export async function listCategoriesWithTopics(
+	db: SupabaseClient,
+	opts: { enabledOnly?: boolean } = {}
+): Promise<CategoryWithTopics[]> {
+	const [catsRes, topsRes] = await Promise.all([
+		db.from('topic_categories').select('*').order('sort_order').order('name'),
+		db.from('topics').select('*').order('name')
+	]);
+	if (catsRes.error) throw new Error(`listCategoriesWithTopics failed: ${catsRes.error.message}`);
+	if (topsRes.error) throw new Error(`listCategoriesWithTopics failed: ${topsRes.error.message}`);
+
+	let cats = (catsRes.data ?? []) as TopicCategory[];
+	let tops = (topsRes.data ?? []) as TopicEntry[];
+	if (opts.enabledOnly) {
+		cats = cats.filter((c) => c.enabled);
+		tops = tops.filter((t) => t.enabled);
+	}
+
+	const byCat = new Map<string, TopicEntry[]>();
+	for (const t of tops) {
+		const arr = byCat.get(t.category_id);
+		if (arr) arr.push(t);
+		else byCat.set(t.category_id, [t]);
+	}
+	return cats.map((c) => ({ ...c, topics: byCat.get(c.id) ?? [] }));
+}
+
+export async function createCategory(
+	db: SupabaseClient,
+	input: { name: string; weight?: number }
+): Promise<TopicCategory> {
+	const { data, error } = await db
+		.from('topic_categories')
+		.insert({ id: newId(), name: input.name, weight: input.weight ?? 1 })
+		.select('*')
+		.single();
+	if (error) throw new Error(`createCategory failed: ${error.message}`);
+	return data as TopicCategory;
+}
+
+export async function updateCategory(
+	db: SupabaseClient,
+	id: string,
+	patch: Partial<Pick<TopicCategory, 'name' | 'weight' | 'enabled' | 'sort_order'>>
+): Promise<void> {
+	const { error } = await db.from('topic_categories').update(patch).eq('id', id);
+	if (error) throw new Error(`updateCategory failed: ${error.message}`);
+}
+
+export async function deleteCategory(db: SupabaseClient, id: string): Promise<void> {
+	// Topics cascade-delete via the FK.
+	const { error } = await db.from('topic_categories').delete().eq('id', id);
+	if (error) throw new Error(`deleteCategory failed: ${error.message}`);
+}
+
+export async function createTopics(
+	db: SupabaseClient,
+	categoryId: string,
+	items: Array<{ name: string; weight?: number }>
+): Promise<void> {
+	if (items.length === 0) return;
+	const rows = items.map((i) => ({
+		id: newId(),
+		category_id: categoryId,
+		name: i.name,
+		weight: i.weight ?? 1
+	}));
+	const { error } = await db.from('topics').insert(rows);
+	if (error) throw new Error(`createTopics failed: ${error.message}`);
+}
+
+export async function updateTopic(
+	db: SupabaseClient,
+	id: string,
+	patch: Partial<
+		Pick<
+			TopicEntry,
+			'name' | 'weight' | 'enabled' | 'subtopics' | 'angle' | 'personal_note' | 'keep_getting_wrong'
+		>
+	>
+): Promise<void> {
+	const { error } = await db.from('topics').update(patch).eq('id', id);
+	if (error) throw new Error(`updateTopic failed: ${error.message}`);
+}
+
+export async function deleteTopic(db: SupabaseClient, id: string): Promise<void> {
+	const { error } = await db.from('topics').delete().eq('id', id);
+	if (error) throw new Error(`deleteTopic failed: ${error.message}`);
+}
+
+/* ----------------------------------------------------------------------------
  * Dashboard / history
  * ------------------------------------------------------------------------- */
 
@@ -383,22 +459,17 @@ export async function getDashboardData(
 	db: SupabaseClient,
 	historyLimit = 20
 ): Promise<DashboardData> {
-	const [quizzesRes, submissionsRes, evaluationsRes, weakTopicsRes] = await Promise.all([
+	const [quizzesRes, submissionsRes, evaluationsRes] = await Promise.all([
 		db
 			.from('quizzes')
 			.select('id, created_at, title, topics, difficulty')
 			.order('created_at', { ascending: false })
 			.limit(historyLimit),
 		db.from('quiz_submissions').select('id, quiz_id, created_at'),
-		db.from('evaluations').select('submission_id, quiz_id, mcq_correct, mcq_total, overall_summary, created_at'),
-		db
-			.from('weak_topics')
-			.select('id, created_at, topic, reason, suggested_review, source_quiz_id')
-			.order('created_at', { ascending: false })
-			.limit(12)
+		db.from('evaluations').select('submission_id, quiz_id, mcq_correct, mcq_total, created_at')
 	]);
 
-	for (const res of [quizzesRes, submissionsRes, evaluationsRes, weakTopicsRes]) {
+	for (const res of [quizzesRes, submissionsRes, evaluationsRes]) {
 		if (res.error) throw new Error(`getDashboardData failed: ${res.error.message}`);
 	}
 
@@ -416,7 +487,6 @@ export async function getDashboardData(
 		quiz_id: string;
 		mcq_correct: number | null;
 		mcq_total: number | null;
-		overall_summary: string | null;
 		created_at: string;
 	}[];
 
@@ -452,16 +522,13 @@ export async function getDashboardData(
 		.map((e) => (e.mcq_correct ?? 0) / (e.mcq_total as number));
 	const avg =
 		accuracies.length > 0 ? accuracies.reduce((a, b) => a + b, 0) / accuracies.length : null;
-	const recentEval = [...evaluations].sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
 
 	return {
 		history,
-		weak_topics: (weakTopicsRes.data ?? []) as DashboardData['weak_topics'],
 		stats: {
 			total_quizzes: quizRows.length,
 			completed_quizzes: history.filter((h) => h.submitted).length,
-			avg_mcq_accuracy: avg,
-			recent_summary: recentEval?.overall_summary ?? null
+			avg_mcq_accuracy: avg
 		},
 		latest_quiz_id: quizRows[0]?.id ?? null
 	};

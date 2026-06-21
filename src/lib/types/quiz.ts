@@ -30,19 +30,6 @@ export interface ShortAnswerQuestion {
 	is_coding_question?: boolean;
 }
 
-export interface ComprehensionQuestion {
-	id: string;
-	question: string;
-	expected_answer: string;
-}
-
-export interface ReadingSection {
-	title: string;
-	body_markdown: string;
-	topic_tags: string[];
-	comprehension_questions: ComprehensionQuestion[];
-}
-
 export interface Quiz {
 	id: string;
 	created_at: string;
@@ -51,7 +38,6 @@ export interface Quiz {
 	difficulty: Difficulty;
 	mcq_questions: MCQQuestion[];
 	short_answer_questions: ShortAnswerQuestion[];
-	reading?: ReadingSection;
 }
 
 /* ---------- Submission ---------- */
@@ -83,27 +69,52 @@ export interface McqResult {
 export interface ShortAnswerResult {
 	question_id: string;
 	user_answer: string;
-	feedback: string;
-	corrected_explanation: string;
-	missing_concepts: string[];
 	topic_tags: string[];
-}
-
-export interface WeakTopic {
-	topic: string;
-	reason: string;
-	suggested_review: string;
 }
 
 export interface Evaluation {
 	quiz_id: string;
 	mcq_results: McqResult[];
 	short_answer_results: ShortAnswerResult[];
-	weak_topics: WeakTopic[];
-	overall_summary: string;
 	/** Secondary, simple stats for the dashboard. Not the focus of the app. */
 	mcq_correct: number;
 	mcq_total: number;
+}
+
+/* ---------- Topic bank (weighted sampling) ---------- */
+
+export interface TopicCategory {
+	id: string;
+	created_at: string;
+	name: string;
+	/** Relative weight controlling the quiz's category mix. Normalized at sample time. */
+	weight: number;
+	enabled: boolean;
+	sort_order: number;
+}
+
+export interface TopicEntry {
+	id: string;
+	created_at: string;
+	category_id: string;
+	name: string;
+	/** Relative weight within the category. Normalized at sample time. */
+	weight: number;
+	enabled: boolean;
+	subtopics: string[];
+	angle: string | null;
+	personal_note: string | null;
+	keep_getting_wrong: string[];
+}
+
+/** A topic chosen by the sampler, carrying the facets surfaced for this run. */
+export interface SelectedTopic {
+	name: string;
+	category: string;
+	subtopics?: string[];
+	angle?: string | null;
+	personal_note?: string | null;
+	keep_getting_wrong?: string[];
 }
 
 /* ---------- Persistence rows ---------- */
@@ -148,11 +159,7 @@ export interface PromptSetting {
 }
 
 /* The editable prompt slots surfaced in the prompt editor. */
-export type PromptName =
-	| 'quiz_generation'
-	| 'short_answer_evaluation'
-	| 'reading_generation'
-	| 'weak_topic_extraction';
+export type PromptName = 'quiz_generation';
 
 /* ---------- Dashboard view models ---------- */
 
@@ -170,12 +177,10 @@ export interface QuizHistoryItem {
 
 export interface DashboardData {
 	history: QuizHistoryItem[];
-	weak_topics: Array<WeakTopic & { id: string; created_at: string; source_quiz_id: string | null }>;
 	stats: {
 		total_quizzes: number;
 		completed_quizzes: number;
 		avg_mcq_accuracy: number | null;
-		recent_summary: string | null;
 	};
 	latest_quiz_id: string | null;
 }

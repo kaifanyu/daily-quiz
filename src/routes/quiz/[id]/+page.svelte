@@ -72,7 +72,7 @@
 		</svg>
 		<div>
 			<p class="text-lg font-semibold text-foreground">Evaluating your answers…</p>
-			<p class="mt-1 text-sm text-muted">Grading multiple choice and reviewing your short answers.</p>
+			<p class="mt-1 text-sm text-muted">Grading your multiple-choice answers.</p>
 		</div>
 	</div>
 {:else}
@@ -86,7 +86,7 @@
 		</div>
 		<p class="mt-4 max-w-2xl text-sm leading-relaxed text-muted">
 			Answer all questions, then submit once at the bottom. Correct answers, explanations,
-			short-answer feedback, and the reading section are revealed only after you submit.
+			and the model's ideal short answers are revealed only after you submit.
 		</p>
 	</div>
 

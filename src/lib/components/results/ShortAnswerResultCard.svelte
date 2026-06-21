@@ -33,34 +33,9 @@
 			{/if}
 		</div>
 
-		<div>
-			<p class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Feedback</p>
-			<Markdown content={result.feedback} class="text-sm" />
-		</div>
-
 		<div class="rounded-lg border border-border bg-surface-2 p-4">
-			<p class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Correct explanation</p>
-			<Markdown content={result.corrected_explanation} class="text-sm" />
+			<p class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Model ideal answer</p>
+			<Markdown content={question.ideal_answer} class="text-sm" />
 		</div>
-
-		{#if result.missing_concepts.length > 0}
-			<div>
-				<p class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">What was missing</p>
-				<div class="flex flex-wrap gap-2">
-					{#each result.missing_concepts as concept (concept)}
-						<Badge tone="warning">{concept}</Badge>
-					{/each}
-				</div>
-			</div>
-		{/if}
-
-		<details class="group">
-			<summary class="cursor-pointer text-xs font-medium text-muted hover:text-foreground">
-				Show model ideal answer
-			</summary>
-			<div class="mt-2 rounded-lg border border-border p-3">
-				<Markdown content={question.ideal_answer} class="text-sm" />
-			</div>
-		</details>
 	</div>
 </div>

@@ -3,11 +3,9 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import StatCard from '$lib/components/StatCard.svelte';
-	import Card from '$lib/components/Card.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import Alert from '$lib/components/Alert.svelte';
 	import QuizListItem from '$lib/components/QuizListItem.svelte';
-	import WeakTopicCard from '$lib/components/results/WeakTopicCard.svelte';
 	import { pct } from '$lib/format';
 
 	let { data }: { data: PageData } = $props();
@@ -36,7 +34,7 @@
 	<Alert tone="danger" title="Couldn't load the dashboard">{data.error}</Alert>
 {:else if dash}
 	<!-- Secondary stats — learning first, score second. -->
-	<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+	<div class="grid grid-cols-2 gap-4 lg:grid-cols-3">
 		<StatCard label="Quizzes" value={dash.stats.total_quizzes} />
 		<StatCard label="Completed" value={dash.stats.completed_quizzes} />
 		<StatCard
@@ -44,19 +42,11 @@
 			value={pct(dash.stats.avg_mcq_accuracy)}
 			sub="across completed quizzes"
 		/>
-		<StatCard label="Weak topics tracked" value={dash.weak_topics.length} />
 	</div>
 
-	{#if dash.stats.recent_summary}
-		<Card class="mt-6">
-			<p class="text-xs font-semibold uppercase tracking-wide text-muted">Most recent feedback</p>
-			<p class="mt-2 leading-relaxed text-foreground">{dash.stats.recent_summary}</p>
-		</Card>
-	{/if}
-
-	<div class="mt-8 grid gap-8 lg:grid-cols-3">
+	<div class="mt-8">
 		<!-- Recent quizzes -->
-		<section class="lg:col-span-2">
+		<section>
 			<div class="mb-3 flex items-center justify-between">
 				<h2 class="text-lg font-semibold text-foreground">Recent quizzes</h2>
 				<a href="/history" class="text-sm font-medium text-primary hover:underline">View all</a>
@@ -72,22 +62,6 @@
 				<div class="space-y-3">
 					{#each recent as item (item.quiz_id)}
 						<QuizListItem {item} />
-					{/each}
-				</div>
-			{/if}
-		</section>
-
-		<!-- Weak topics -->
-		<section>
-			<div class="mb-3 flex items-center justify-between">
-				<h2 class="text-lg font-semibold text-foreground">Weak topics</h2>
-			</div>
-			{#if dash.weak_topics.length === 0}
-				<EmptyState title="Nothing flagged yet" description="Weak topics appear after you submit a quiz." />
-			{:else}
-				<div class="space-y-3">
-					{#each dash.weak_topics.slice(0, 5) as topic (topic.id)}
-						<WeakTopicCard {topic} />
 					{/each}
 				</div>
 			{/if}

@@ -114,7 +114,7 @@ body {
 }
 
 /*
- * `.prose-quiz` — typography for AI-rendered markdown (reading section, feedback).
+ * `.prose-quiz` — typography for AI-rendered markdown (questions, model answers, summaries).
  * Kept lightweight and theme-aware instead of pulling in @tailwindcss/typography.
  */
 .prose-quiz {

@@ -41,36 +41,6 @@ export const aiShortAnswerBatchSchema = z.object({
 	questions: z.array(aiShortAnswerSchema).min(1)
 });
 
-/** Reading passage + comprehension questions. */
-export const aiReadingSchema = z.object({
-	title: z.string().min(1),
-	body_markdown: z.string().min(200),
-	topic_tags: z.array(z.string().min(1)).min(1),
-	comprehension_questions: z
-		.array(z.object({ question: z.string().min(5), expected_answer: z.string().min(1) }))
-		.min(3)
-});
-
-/** Short-answer evaluation output. `question_id` is echoed back for mapping. */
-export const aiEvaluationSchema = z.object({
-	short_answer_results: z.array(
-		z.object({
-			question_id: z.string().min(1),
-			feedback: z.string().min(1),
-			corrected_explanation: z.string().min(1),
-			missing_concepts: z.array(z.string())
-		})
-	),
-	weak_topics: z.array(
-		z.object({
-			topic: z.string().min(1),
-			reason: z.string().min(1),
-			suggested_review: z.string().min(1)
-		})
-	),
-	overall_summary: z.string().min(1)
-});
-
 /** Source-material summarization output. */
 export const aiSourceSummarySchema = z.object({
 	summary: z.string().min(1),
@@ -79,6 +49,4 @@ export const aiSourceSummarySchema = z.object({
 
 export type AiMcq = z.infer<typeof aiMcqSchema>;
 export type AiShortAnswer = z.infer<typeof aiShortAnswerSchema>;
-export type AiReading = z.infer<typeof aiReadingSchema>;
-export type AiEvaluation = z.infer<typeof aiEvaluationSchema>;
 export type AiSourceSummary = z.infer<typeof aiSourceSummarySchema>;

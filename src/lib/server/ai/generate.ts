@@ -1,10 +1,15 @@
 import type OpenAI from 'openai';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Difficulty, MCQQuestion, Quiz, ShortAnswerQuestion } from '$lib/types/quiz';
+import type {
+	Difficulty,
+	MCQQuestion,
+	Quiz,
+	SelectedTopic,
+	ShortAnswerQuestion
+} from '$lib/types/quiz';
 import { chatJSON } from './openai';
 import {
 	aiMcqBatchSchema,
-	aiReadingSchema,
 	aiShortAnswerBatchSchema,
 	type AiMcq,
 	type AiShortAnswer
@@ -28,9 +33,38 @@ export interface GenerateDeps {
 export interface GenerateOptions {
 	topics: string[];
 	difficulty: Difficulty;
+	/**
+	 * Optional rich detail for each topic (from the weighted topic bank). When
+	 * present, it steers generation toward specific facets/angles; otherwise the
+	 * plain `topics` names are used.
+	 */
+	topicDetails?: SelectedTopic[];
 }
 
 type GenOptionsWithContext = GenerateOptions & { contextText: string };
+
+/**
+ * Renders the topic list for a prompt. With bank detail it produces a steered,
+ * one-line-per-topic block (facets, angle, reinforcement, personal note);
+ * otherwise a plain comma-separated list of names.
+ */
+function renderTopics(topics: string[], details?: SelectedTopic[]): string {
+	if (!details || details.length === 0) return topics.join(', ');
+	return details
+		.map((d) => {
+			const bits: string[] = [];
+			if (d.subtopics?.length) bits.push(`focus facets: ${d.subtopics.join(', ')}`);
+			if (d.angle) bits.push(`angle: ${d.angle}`);
+			if (d.keep_getting_wrong?.length)
+				bits.push(
+					`reinforce (learner keeps getting these wrong): ${d.keep_getting_wrong.join(', ')}`
+				);
+			if (d.personal_note) bits.push(`context: ${d.personal_note}`);
+			const suffix = bits.length > 0 ? ` — ${bits.join('; ')}` : '';
+			return `- ${d.name} [${d.category}]${suffix}`;
+		})
+		.join('\n');
+}
 
 export interface GenerateResult {
 	quiz: Quiz;
@@ -62,6 +96,7 @@ Every question MUST have exactly 4 choices with ids A, B, C, D.`;
 function mcqUserPrompt(opts: {
 	count: number;
 	topics: string[];
+	topicDetails?: SelectedTopic[];
 	difficulty: Difficulty;
 	contextText: string;
 	usedStems: string[];
@@ -71,7 +106,8 @@ function mcqUserPrompt(opts: {
 			? `\nDo NOT duplicate or trivially rephrase these already-used questions:\n- ${opts.usedStems.join('\n- ')}\n`
 			: '';
 	return `Generate exactly ${opts.count} hard, interview-level multiple-choice questions.
-Topics to draw from (distribute roughly evenly, do not cluster): ${opts.topics.join(', ')}.
+Topics to draw from (distribute roughly evenly, do not cluster):
+${renderTopics(opts.topics, opts.topicDetails)}
 Difficulty: ${opts.difficulty}.
 ${contextBlock(opts.contextText)}${used}
 ${MCQ_SHAPE}`;
@@ -81,11 +117,13 @@ function shortAnswerUserPrompt(opts: {
 	count: number;
 	codingCount: number;
 	topics: string[];
+	topicDetails?: SelectedTopic[];
 	difficulty: Difficulty;
 	contextText: string;
 }): string {
 	return `Generate exactly ${opts.count} hard, interview-level short-answer questions, each answerable in roughly one paragraph.
-Topics to draw from: ${opts.topics.join(', ')}.
+Topics to draw from:
+${renderTopics(opts.topics, opts.topicDetails)}
 Difficulty: ${opts.difficulty}.
 At least ${opts.codingCount} of these MUST be coding-related (writing code, debugging, reasoning about code, C++ behavior, concurrency, mutexes, deadlocks, or memory management) and have "is_coding_question": true.
 ${contextBlock(opts.contextText)}
@@ -99,26 +137,6 @@ Return a single JSON object of exactly this shape:
       "topic_tags": ["string"],
       "is_coding_question": true
     }
-  ]
-}`;
-}
-
-function readingUserPrompt(opts: {
-	topics: string[];
-	difficulty: Difficulty;
-	contextText: string;
-}): string {
-	return `Write an advanced reading passage of approximately 1000 words (Markdown) that weaves together several of these topics into one cohesive piece: ${opts.topics.join(', ')}.
-Difficulty: ${opts.difficulty}.
-${contextBlock(opts.contextText)}
-Then write 3 to 5 comprehension questions that require synthesis and reasoning about the passage (not surface recall).
-Return a single JSON object of exactly this shape:
-{
-  "title": "string",
-  "body_markdown": "string (~1000 words, Markdown)",
-  "topic_tags": ["string"],
-  "comprehension_questions": [
-    { "question": "string", "expected_answer": "string" }
   ]
 }`;
 }
@@ -152,7 +170,11 @@ async function generateMcqs(deps: GenerateDeps, system: string, opts: GenOptions
 	return collected;
 }
 
-async function generateShortAnswers(deps: GenerateDeps, system: string, opts: GenOptionsWithContext) {
+async function generateShortAnswers(
+	deps: GenerateDeps,
+	system: string,
+	opts: GenOptionsWithContext
+) {
 	const result = await chatJSON(deps.client, {
 		model: deps.model,
 		schema: aiShortAnswerBatchSchema,
@@ -203,9 +225,8 @@ export async function generateQuiz(
 	deps: GenerateDeps,
 	options: GenerateOptions
 ): Promise<GenerateResult> {
-	const [quizSystem, readingSystem, sources] = await Promise.all([
+	const [quizSystem, sources] = await Promise.all([
 		loadPrompt(deps.db, 'quiz_generation'),
-		loadPrompt(deps.db, 'reading_generation'),
 		getContextSources(deps.db)
 	]);
 	const { contextText, contextSummary } = buildSourceContext(sources);
@@ -215,15 +236,6 @@ export async function generateQuiz(
 	// feed MCQ stems forward for de-duplication.
 	const mcqs = await generateMcqs(deps, quizSystem, withContext);
 	const shorts = await generateShortAnswers(deps, quizSystem, withContext);
-	const reading = await chatJSON(deps.client, {
-		model: deps.model,
-		schema: aiReadingSchema,
-		system: readingSystem,
-		temperature: 0.7,
-		maxTokens: 4000,
-		label: 'reading generation',
-		user: readingUserPrompt({ ...options, contextText })
-	});
 
 	const mcq_questions: MCQQuestion[] = mcqs.map((q, i) => ({
 		id: `m${i + 1}`,
@@ -255,17 +267,7 @@ export async function generateQuiz(
 		topics: options.topics,
 		difficulty: options.difficulty,
 		mcq_questions,
-		short_answer_questions,
-		reading: {
-			title: reading.title,
-			body_markdown: reading.body_markdown,
-			topic_tags: reading.topic_tags,
-			comprehension_questions: reading.comprehension_questions.map((c, i) => ({
-				id: `c${i + 1}`,
-				question: c.question,
-				expected_answer: c.expected_answer
-			}))
-		}
+		short_answer_questions
 	};
 
 	return { quiz, sourceContextSummary: contextSummary };

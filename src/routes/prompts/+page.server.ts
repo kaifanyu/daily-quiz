@@ -6,12 +6,7 @@ import { deletePrompt, getAllPrompts, upsertPrompt } from '$lib/server/supabase/
 import { DEFAULT_PROMPTS } from '$lib/server/ai/prompts';
 import type { PromptName } from '$lib/types/quiz';
 
-const PROMPT_NAMES: PromptName[] = [
-	'quiz_generation',
-	'reading_generation',
-	'short_answer_evaluation',
-	'weak_topic_extraction'
-];
+const PROMPT_NAMES: PromptName[] = ['quiz_generation'];
 
 function isPromptName(v: string): v is PromptName {
 	return (PROMPT_NAMES as string[]).includes(v);
