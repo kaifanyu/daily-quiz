@@ -31,7 +31,7 @@ const CSP = [
 	"object-src 'none'",
 	"img-src 'self' data: blob:",
 	"media-src 'self' blob:",
-	"script-src 'self' 'unsafe-inline'",
+	"script-src 'self' 'unsafe-inline' 'unsafe-eval'",
 	"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
 	'font-src https://fonts.gstatic.com',
 	"connect-src 'self' wss:"
