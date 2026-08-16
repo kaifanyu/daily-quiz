@@ -151,7 +151,11 @@ export async function authorizeViewer(
 ): Promise<AuthResult> {
 	const requireExactViewer = options.requireExactViewer ?? true;
 	if (isDevBypassAllowed(request, config)) {
-		return { ok: true, email: config.viewerEmail || 'dev@localhost', via: 'dev-bypass' };
+		return {
+			ok: true,
+			email: config.viewerEmail.split(',')[0]?.trim() || 'dev@localhost',
+			via: 'dev-bypass'
+		};
 	}
 
 	if (!isAccessConfigured(config)) {
@@ -195,7 +199,18 @@ export async function authorizeViewer(
 
 	const email = (payload.email ?? '').trim().toLowerCase();
 	// FR-02: one exact identity, no domain wildcards, no fallbacks.
-	if (requireExactViewer && (!email || email !== config.viewerEmail)) {
+
+	// Allow multiple exact email identities, separated by commas.
+	// No domain wildcards or fallback identities.
+	const authorizedViewerEmails = config.viewerEmail
+		.split(',')
+		.map((address) => address.trim().toLowerCase())
+		.filter(Boolean);
+
+	if (
+		requireExactViewer &&
+		(!email || !authorizedViewerEmails.includes(email))
+	) {
 		return { ok: false, status: 403, reason: 'wrong_identity' };
 	}
 
