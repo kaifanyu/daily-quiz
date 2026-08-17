@@ -85,6 +85,9 @@
 			rows="2"
 			maxlength={MAX_CHAT_LENGTH * 2}
 			placeholder={canSend ? 'type something sweet...' : 'reconnecting...'}
+			enterkeyhint="send"
+			autocapitalize="sentences"
+			spellcheck="true"
 			disabled={!canSend}></textarea>
 
 		<div class="chat__actions">
@@ -117,7 +120,13 @@
 		flex: 1 1 auto;
 		min-height: 180px;
 		max-height: min(46vh, 420px);
+		/* `dvh` keeps the list from being pushed off-screen when a phone's virtual
+		   keyboard shrinks the viewport. */
+		max-height: min(46dvh, 420px);
 		overflow-y: auto;
+		/* Don't let a flick at the end of the list scroll the whole page. */
+		overscroll-behavior: contain;
+		-webkit-overflow-scrolling: touch;
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
@@ -201,5 +210,12 @@
 		color: var(--pink-500);
 		font-size: 18px;
 		animation: retro-float 0.9s ease-out forwards;
+	}
+
+	@media (max-width: 640px) {
+		.chat__list {
+			min-height: 140px;
+			max-height: min(38dvh, 320px);
+		}
 	}
 </style>

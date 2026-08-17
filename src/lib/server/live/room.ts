@@ -19,7 +19,7 @@ import {
 	CHAT_BURST_LIMIT,
 	CHAT_BURST_WINDOW_MS,
 	CHAT_MIN_INTERVAL_MS,
-	CLOSE_VIEWER_BUSY,
+	CLOSE_VIEWER_REPLACED,
 	clientMessageSchema,
 	MAX_CHAT_LENGTH,
 	WS_PROTOCOL,
@@ -74,27 +74,21 @@ export class LiveRoom extends DurableObject {
 			headers.set('sec-websocket-protocol', WS_PROTOCOL);
 		}
 
-		// FR-06: exactly one viewer. A second one is turned away politely rather
-		// than silently stealing the first one's stream.
-		if (role === 'viewer' && this.sockets('viewer').length > 0) {
-			this.ctx.acceptWebSocket(server, ['reject']);
-			this.send(server, {
-				type: 'error',
-				code: 'viewer_busy',
-				message: 'This little room is already open in another tab or device.'
-			});
-			server.close(CLOSE_VIEWER_BUSY, 'viewer_busy');
-			return new Response(null, { status: 101, webSocket: client, headers });
-		}
-
-		// A reconnecting broadcaster replaces the stale one.
-		if (role === 'broadcaster') {
-			for (const existing of this.sockets('broadcaster')) {
-				try {
-					existing.close(1000, 'replaced');
-				} catch {
-					// already gone
-				}
+		// FR-06: one viewer at a time — but the *newest* connection wins rather than
+		// being turned away. A phone that gets backgrounded, locked or handed
+		// between wifi and cellular is frozen without ever closing its socket, so
+		// the room would still count that ghost as the live viewer and lock the
+		// real one out until the dead socket timed out minutes later (FR-15).
+		// Replacing is one of the two behaviours FR-06 allows, and the identity is
+		// already verified upstream, so there is no one else to steal from.
+		// The evicted socket gets its own close code so its UI can say what happened
+		// instead of reconnecting and fighting for the room.
+		const stale = role === 'viewer' ? this.sockets('viewer') : this.sockets('broadcaster');
+		for (const existing of stale) {
+			try {
+				existing.close(role === 'viewer' ? CLOSE_VIEWER_REPLACED : 1000, 'replaced');
+			} catch {
+				// already gone
 			}
 		}
 
@@ -137,6 +131,14 @@ export class LiveRoom extends DurableObject {
 				return this.send(ws, { type: 'pong' });
 
 			case 'viewer.ready':
+				// Always ask the broadcaster for a fresh offer. A viewer that
+				// reconnects after its phone was asleep has a dead peer connection,
+				// and presence alone may never have dropped, so nothing else would
+				// ever restart the video.
+				if (role !== 'viewer') return this.deny(ws);
+				this.relay('viewer', { type: 'viewer.rejoined' });
+				return this.broadcastPresence();
+
 			case 'broadcaster.ready':
 				return this.broadcastPresence();
 

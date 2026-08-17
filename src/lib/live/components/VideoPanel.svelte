@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import type { ConnectionState } from '$lib/live/signaling.svelte';
 	import type { VideoState } from '$lib/live/viewer.svelte';
 
@@ -29,17 +30,48 @@
 			soundOn = false;
 			return;
 		}
-		needsTap = false;
 		hasAudio = stream.getAudioTracks().length > 0;
 		element.muted = !soundOn;
-		element.play().catch(() => (needsTap = true));
+		void play();
 	});
 
-	function enableSound() {
-		if (!videoElement) return;
-		soundOn = true;
-		videoElement.muted = false;
-		videoElement.play().catch(() => (needsTap = true));
+	async function play(): Promise<void> {
+		const element = videoElement;
+		if (!element) return;
+		try {
+			await element.play();
+			needsTap = false;
+		} catch {
+			// iOS Low Power Mode and some Android browsers refuse even a muted
+			// autoplay, so fall back to asking for one tap.
+			needsTap = true;
+		}
+	}
+
+	// A phone that was locked or backgrounded comes back with the element paused,
+	// and nothing restarts it on its own.
+	onMount(() => {
+		const onVisibility = () => {
+			if (document.visibilityState === 'visible' && stream) void play();
+		};
+		document.addEventListener('visibilitychange', onVisibility);
+		return () => document.removeEventListener('visibilitychange', onVisibility);
+	});
+
+	async function enableSound() {
+		const element = videoElement;
+		if (!element) return;
+		element.muted = false;
+		try {
+			await element.play();
+			soundOn = true;
+		} catch {
+			// Unmuted playback was refused — go back to muted so the picture keeps
+			// running instead of freezing.
+			element.muted = true;
+			soundOn = false;
+			void play();
+		}
 	}
 
 	let phase = $derived.by(() => {
@@ -62,12 +94,19 @@
 
 <div class="stage" class:stage--live={phase === 'live'}>
 	<!-- svelte-ignore a11y_media_has_caption -->
+	<!--
+		`muted` and `playsinline` are both load-bearing on mobile: Safari decides
+		whether autoplay is allowed from the attribute, and without `playsinline`
+		iOS hijacks the stream into its own fullscreen player.
+	-->
 	<video
 		bind:this={videoElement}
 		class="video"
 		class:video--hidden={phase !== 'live'}
 		autoplay
+		muted
 		playsinline
+		disablepictureinpicture
 	></video>
 
 	{#if phase !== 'live'}
@@ -134,7 +173,7 @@
 	{/if}
 
 	{#if phase === 'live' && needsTap}
-		<button class="btn btn--mint tap" onclick={() => videoElement?.play()}>♡ tap to play</button>
+		<button class="btn btn--mint tap" onclick={play}>♡ tap to play</button>
 	{:else if phase === 'live' && hasAudio && !soundOn}
 		<button class="btn btn--mint tap" onclick={enableSound}>♡ tap for sound</button>
 	{/if}
