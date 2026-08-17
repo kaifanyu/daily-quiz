@@ -24,6 +24,34 @@ export const TTS_QUEUE_LIMIT = 20;
 export const WS_PROTOCOL = 'live.v1';
 export const WS_BROADCASTER_TOKEN_PREFIX = 'bt.';
 
+/**
+ * A subprotocol value is an RFC 6455 *token*: letters, digits and a handful of
+ * punctuation. `/` and `=` are not in that set, so a raw `openssl rand -base64 32`
+ * token makes `new WebSocket(url, protocols)` throw `SyntaxError` in the browser
+ * before a request is ever sent. Base64url without padding is token-safe, so the
+ * token is encoded on the way out and decoded in the signaling endpoint.
+ */
+export function encodeBroadcasterToken(token: string): string {
+	const bytes = new TextEncoder().encode(token);
+	let binary = '';
+	for (const byte of bytes) binary += String.fromCharCode(byte);
+	return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** Inverse of {@link encodeBroadcasterToken}. Returns `null` if it isn't base64url. */
+export function decodeBroadcasterToken(encoded: string): string | null {
+	if (!/^[A-Za-z0-9\-_]*$/.test(encoded)) return null;
+	try {
+		const padded = encoded.replace(/-/g, '+').replace(/_/g, '/');
+		const binary = atob(padded + '='.repeat((4 - (padded.length % 4)) % 4));
+		const bytes = new Uint8Array(binary.length);
+		for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+		return new TextDecoder().decode(bytes);
+	} catch {
+		return null;
+	}
+}
+
 export type Role = 'viewer' | 'broadcaster';
 
 const sessionDescription = z.object({

@@ -8,6 +8,7 @@
 import {
 	CLOSE_UNAUTHORIZED,
 	CLOSE_VIEWER_BUSY,
+	encodeBroadcasterToken,
 	WS_BROADCASTER_TOKEN_PREFIX,
 	WS_PROTOCOL,
 	type ClientMessage,
@@ -94,17 +95,24 @@ export class Signaling {
 		url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
 
 		// The broadcaster token rides in the subprotocol header rather than the
-		// query string so it never lands in a URL or an access log.
+		// query string so it never lands in a URL or an access log. It is
+		// base64url-encoded because a subprotocol may only contain token characters.
 		const protocols = [WS_PROTOCOL];
-		if (this.#token) protocols.push(`${WS_BROADCASTER_TOKEN_PREFIX}${this.#token}`);
+		if (this.#token) {
+			protocols.push(`${WS_BROADCASTER_TOKEN_PREFIX}${encodeBroadcasterToken(this.#token)}`);
+		}
 
 		this.state = this.#attempts === 0 ? 'connecting' : 'reconnecting';
 
 		let socket: WebSocket;
 		try {
 			socket = new WebSocket(url, protocols);
-		} catch {
-			this.#scheduleReconnect();
+		} catch (error) {
+			// The constructor only throws for a malformed URL or subprotocol —
+			// retrying cannot fix either, so fail loudly instead of looping.
+			console.error('[live] could not open the signaling socket', error);
+			this.state = 'denied';
+			this.rejection = 'This browser refused the connection details. Check the broadcaster token.';
 			return;
 		}
 		this.#socket = socket;

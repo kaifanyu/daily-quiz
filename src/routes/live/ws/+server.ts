@@ -16,7 +16,11 @@
 import type { RequestHandler } from './$types';
 import { authorizeViewer, tokenMatches } from '$lib/server/live/access';
 import { getLiveConfig } from '$lib/server/live/config';
-import { WS_BROADCASTER_TOKEN_PREFIX, WS_PROTOCOL } from '$lib/live/protocol';
+import {
+	decodeBroadcasterToken,
+	WS_BROADCASTER_TOKEN_PREFIX,
+	WS_PROTOCOL
+} from '$lib/live/protocol';
 
 /** `Sec-WebSocket-Protocol: live.v1, bt.abc123` -> ['live.v1', 'bt.abc123'] */
 function subprotocols(request: Request): string[] {
@@ -41,9 +45,12 @@ export const GET: RequestHandler = async ({ request, platform }) => {
 
 	const config = getLiveConfig(platform);
 	const offered = subprotocols(request);
-	const presentedToken = offered
+	// `bt.<base64url token>` — see `encodeBroadcasterToken` for why it is encoded.
+	const presentedProtocol = offered
 		.find((value) => value.startsWith(WS_BROADCASTER_TOKEN_PREFIX))
 		?.slice(WS_BROADCASTER_TOKEN_PREFIX.length);
+	const presentedToken =
+		presentedProtocol === undefined ? undefined : (decodeBroadcasterToken(presentedProtocol) ?? '');
 
 	let role: 'viewer' | 'broadcaster';
 
