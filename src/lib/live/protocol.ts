@@ -110,4 +110,6 @@ export type ErrorCode =
 
 /** Close codes we use deliberately, so the UI can explain what happened. */
 export const CLOSE_VIEWER_BUSY = 4001;
+/** This socket was superseded by a newer one for the same role — do not reconnect. */
+export const CLOSE_REPLACED = 4002;
 export const CLOSE_UNAUTHORIZED = 4003;

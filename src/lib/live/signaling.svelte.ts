@@ -6,6 +6,7 @@
  */
 
 import {
+	CLOSE_REPLACED,
 	CLOSE_UNAUTHORIZED,
 	CLOSE_VIEWER_BUSY,
 	encodeBroadcasterToken,
@@ -159,6 +160,13 @@ export class Signaling {
 			}
 			if (event.code === CLOSE_UNAUTHORIZED) {
 				this.state = 'denied';
+				return;
+			}
+			// Superseded by a newer socket for the same role. Reconnecting here would
+			// just evict whoever replaced us, so stay down and say so.
+			if (event.code === CLOSE_REPLACED) {
+				this.state = 'closed';
+				this.rejection = 'This page was opened somewhere else — reload to take it back.';
 				return;
 			}
 			if (this.#stopped) {

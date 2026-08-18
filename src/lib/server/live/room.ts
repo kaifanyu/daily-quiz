@@ -19,6 +19,7 @@ import {
 	CHAT_BURST_LIMIT,
 	CHAT_BURST_WINDOW_MS,
 	CHAT_MIN_INTERVAL_MS,
+	CLOSE_REPLACED,
 	CLOSE_VIEWER_BUSY,
 	clientMessageSchema,
 	MAX_CHAT_LENGTH,
@@ -87,11 +88,14 @@ export class LiveRoom extends DurableObject {
 			return new Response(null, { status: 101, webSocket: client, headers });
 		}
 
-		// A reconnecting broadcaster replaces the stale one.
+		// A reconnecting broadcaster replaces the stale one. The close code matters:
+		// 1000 reads as an ordinary drop, so the evicted page reconnects, evicts the
+		// page that replaced it, and the two churn forever. CLOSE_REPLACED tells it
+		// to stay down.
 		if (role === 'broadcaster') {
 			for (const existing of this.sockets('broadcaster')) {
 				try {
-					existing.close(1000, 'replaced');
+					existing.close(CLOSE_REPLACED, 'replaced');
 				} catch {
 					// already gone
 				}
