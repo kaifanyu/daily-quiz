@@ -19,7 +19,6 @@ import {
 	CHAT_BURST_LIMIT,
 	CHAT_BURST_WINDOW_MS,
 	CHAT_MIN_INTERVAL_MS,
-	CLOSE_REPLACED,
 	CLOSE_VIEWER_BUSY,
 	clientMessageSchema,
 	MAX_CHAT_LENGTH,
@@ -88,14 +87,11 @@ export class LiveRoom extends DurableObject {
 			return new Response(null, { status: 101, webSocket: client, headers });
 		}
 
-		// A reconnecting broadcaster replaces the stale one. The close code matters:
-		// 1000 reads as an ordinary drop, so the evicted page reconnects, evicts the
-		// page that replaced it, and the two churn forever. CLOSE_REPLACED tells it
-		// to stay down.
+		// A reconnecting broadcaster replaces the stale one.
 		if (role === 'broadcaster') {
 			for (const existing of this.sockets('broadcaster')) {
 				try {
-					existing.close(CLOSE_REPLACED, 'replaced');
+					existing.close(1000, 'replaced');
 				} catch {
 					// already gone
 				}
@@ -141,6 +137,14 @@ export class LiveRoom extends DurableObject {
 				return this.send(ws, { type: 'pong' });
 
 			case 'viewer.ready':
+				// Always ask the broadcaster for a fresh offer. A viewer that
+				// reconnects after its phone was asleep has a dead peer connection,
+				// and presence alone may never have dropped, so nothing else would
+				// ever restart the video.
+				if (role !== 'viewer') return this.deny(ws);
+				this.relay('viewer', { type: 'viewer.rejoined' });
+				return this.broadcastPresence();
+
 			case 'broadcaster.ready':
 				return this.broadcastPresence();
 

@@ -93,6 +93,13 @@ export interface ChatMessage {
 export type ServerMessage =
 	| { type: 'hello'; role: Role; serverTime: string }
 	| { type: 'presence'; broadcasterOnline: boolean; viewerOnline: boolean; streaming: boolean }
+	/**
+	 * The viewer (re)announced itself and needs a stream. Broadcaster-only: it is
+	 * the cue to publish a fresh offer, because a viewer that reconnected after a
+	 * phone froze or changed network has no working peer connection left even
+	 * though presence may never have dropped.
+	 */
+	| { type: 'viewer.rejoined' }
 	| { type: 'webrtc.offer'; sdp: SessionDescription }
 	| { type: 'webrtc.answer'; sdp: SessionDescription }
 	| { type: 'webrtc.ice'; candidate: IceCandidate }
@@ -110,6 +117,4 @@ export type ErrorCode =
 
 /** Close codes we use deliberately, so the UI can explain what happened. */
 export const CLOSE_VIEWER_BUSY = 4001;
-/** This socket was superseded by a newer one for the same role — do not reconnect. */
-export const CLOSE_REPLACED = 4002;
 export const CLOSE_UNAUTHORIZED = 4003;

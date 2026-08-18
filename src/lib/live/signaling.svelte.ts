@@ -9,6 +9,7 @@ import {
 	CLOSE_REPLACED,
 	CLOSE_UNAUTHORIZED,
 	CLOSE_VIEWER_BUSY,
+	CLOSE_VIEWER_REPLACED,
 	encodeBroadcasterToken,
 	WS_BROADCASTER_TOKEN_PREFIX,
 	WS_PROTOCOL,
@@ -23,6 +24,8 @@ export type ConnectionState =
 	| 'open'
 	| 'reconnecting'
 	| 'busy'
+	/** A newer session (another tab or device) took over the room. */
+	| 'replaced'
 	| 'denied'
 	| 'closed';
 
@@ -35,6 +38,13 @@ export interface Presence {
 const PING_INTERVAL_MS = 25_000;
 const BACKOFF_MIN_MS = 800;
 const BACKOFF_MAX_MS = 15_000;
+/**
+ * A mobile browser that froze the page, or a phone that changed network, leaves
+ * the socket in `OPEN` with nothing on the other end — no close event ever
+ * arrives. If two pings go unanswered we assume the socket is a ghost and
+ * rebuild it rather than sitting on a connection that will never deliver again.
+ */
+const PONG_TIMEOUT_MS = PING_INTERVAL_MS * 2 + 5_000;
 
 export class Signaling {
 	/** Connection lifecycle, for the status lamp. */
@@ -51,6 +61,7 @@ export class Signaling {
 	#pingTimer: ReturnType<typeof setInterval> | null = null;
 	#attempts = 0;
 	#stopped = false;
+	#lastPongAt = 0;
 
 	constructor(options: { role: Role; token?: string }) {
 		this.#role = options.role;
@@ -66,6 +77,30 @@ export class Signaling {
 	connect(): void {
 		if (typeof window === 'undefined') return;
 		this.#stopped = false;
+		this.#open();
+	}
+
+	/**
+	 * Called when the page comes back to the foreground (or the device comes back
+	 * online). A frozen phone wakes up with a socket that is either already closed
+	 * or a ghost that looks open, and any pending backoff timer may be minutes
+	 * away, so reconnect immediately instead of waiting.
+	 */
+	resume(): void {
+		if (this.#stopped || typeof window === 'undefined') return;
+		if (this.state === 'denied' || this.state === 'replaced' || this.state === 'busy') return;
+
+		const socket = this.#socket;
+		if (socket?.readyState === WebSocket.CONNECTING) return;
+
+		if (socket?.readyState === WebSocket.OPEN) {
+			// Probe it: if the pong never lands, the watchdog rebuilds the socket.
+			this.#lastPongAt = Date.now();
+			this.send({ type: 'ping' });
+			return;
+		}
+
+		this.#attempts = 0;
 		this.#open();
 	}
 
@@ -123,10 +158,30 @@ export class Signaling {
 			this.state = 'open';
 			this.rejection = null;
 			this.send(this.#role === 'viewer' ? { type: 'viewer.ready' } : { type: 'broadcaster.ready' });
-			this.#pingTimer = setInterval(() => this.send({ type: 'ping' }), PING_INTERVAL_MS);
+			this.#lastPongAt = Date.now();
+			this.#pingTimer = setInterval(() => {
+				if (Date.now() - this.#lastPongAt > PONG_TIMEOUT_MS) {
+					console.warn('[live] signaling socket went quiet — rebuilding it');
+					// Don't wait for the close handshake on a socket that may already
+					// be dead: drop it and reconnect now. Events from the abandoned
+					// socket are ignored because `#socket` no longer points at it.
+					this.#clearTimers();
+					this.#socket = null;
+					try {
+						socket.close(1000, 'stale');
+					} catch {
+						// already gone
+					}
+					this.#attempts = 0;
+					this.#open();
+					return;
+				}
+				this.send({ type: 'ping' });
+			}, PING_INTERVAL_MS);
 		});
 
 		socket.addEventListener('message', (event) => {
+			if (this.#socket !== socket) return;
 			if (typeof event.data !== 'string') return;
 			let message: ServerMessage;
 			try {
@@ -134,6 +189,7 @@ export class Signaling {
 			} catch {
 				return;
 			}
+			if (message.type === 'pong' || message.type === 'presence') this.#lastPongAt = Date.now();
 			if (message.type === 'presence') {
 				this.presence = {
 					broadcasterOnline: message.broadcasterOnline,
@@ -151,11 +207,21 @@ export class Signaling {
 		});
 
 		socket.addEventListener('close', (event) => {
+			// A socket we already abandoned (see the watchdog above) must not be able
+			// to schedule a second connection.
+			if (this.#socket !== socket) return;
 			this.#clearTimers();
 			this.#socket = null;
 
 			if (event.code === CLOSE_VIEWER_BUSY) {
 				this.state = 'busy';
+				return;
+			}
+			// Another tab or device took the room. Stay put rather than reconnecting,
+			// or the two sessions would evict each other in a loop.
+			if (event.code === CLOSE_VIEWER_REPLACED) {
+				this.state = 'replaced';
+				this.rejection = 'This window opened somewhere else.';
 				return;
 			}
 			if (event.code === CLOSE_UNAUTHORIZED) {
@@ -208,6 +274,8 @@ export function connectionLabel(state: ConnectionState): string {
 			return 'reconnecting...';
 		case 'busy':
 			return 'another tab is open';
+		case 'replaced':
+			return 'open somewhere else';
 		case 'denied':
 			return 'not authorized';
 		case 'closed':

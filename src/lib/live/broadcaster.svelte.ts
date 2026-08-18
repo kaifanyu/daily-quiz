@@ -51,10 +51,21 @@ export class BroadcasterSession {
 				case 'presence': {
 					const wasOnline = this.#viewerOnline;
 					this.#viewerOnline = message.viewerOnline;
-					if (message.viewerOnline && !wasOnline) void this.#offer();
+					// `viewer.rejoined` is the primary cue to publish; this is only the
+					// fallback for a viewer that turned up without one, so it must not
+					// duplicate an offer that already has a peer connection open.
+					if (message.viewerOnline && !wasOnline && !this.#pc) void this.#offer();
 					if (!message.viewerOnline && wasOnline) this.#closePeer();
 					break;
 				}
+
+				// The viewer announced itself and needs a stream: a first visit, a
+				// reconnect after a phone woke up, or a move to another device. Always
+				// publish a fresh offer — the old peer connection is worthless to them.
+				case 'viewer.rejoined':
+					this.#viewerOnline = true;
+					void this.#offer();
+					break;
 				case 'webrtc.answer':
 					void this.#acceptAnswer(message.sdp as RTCSessionDescriptionInit);
 					break;

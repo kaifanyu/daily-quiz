@@ -47,6 +47,26 @@
 		return 'away';
 	});
 
+	/**
+	 * Keep a phone from dimming and locking mid-conversation. The lock is released
+	 * by the browser whenever the page is hidden, so it is re-requested on the way
+	 * back. Unsupported or refused is fine — it just isn't held.
+	 */
+	type WakeLock = { release(): Promise<void> } | null;
+	let wakeLock: WakeLock = null;
+
+	async function holdScreenAwake() {
+		const api = (
+			navigator as Navigator & { wakeLock?: { request(type: 'screen'): Promise<WakeLock> } }
+		).wakeLock;
+		if (!api || wakeLock || document.visibilityState !== 'visible') return;
+		try {
+			wakeLock = await api.request('screen');
+		} catch {
+			wakeLock = null;
+		}
+	}
+
 	onMount(() => {
 		session.start();
 
@@ -58,9 +78,26 @@
 			mood = moods[Math.floor(Math.random() * moods.length)];
 		}, 12_000);
 
+		void holdScreenAwake();
+
+		// Mobile browsers freeze timers while the page is hidden, so the clock is
+		// stale on return and the wake lock is gone.
+		const onVisibility = () => {
+			if (document.visibilityState !== 'visible') {
+				wakeLock = null;
+				return;
+			}
+			tick();
+			void holdScreenAwake();
+		};
+		document.addEventListener('visibilitychange', onVisibility);
+
 		return () => {
+			document.removeEventListener('visibilitychange', onVisibility);
 			clearInterval(clockTimer);
 			clearInterval(moodTimer);
+			void wakeLock?.release();
+			wakeLock = null;
 			session.stop();
 		};
 	});
@@ -89,14 +126,17 @@
 		{/if}
 	</RetroWindow>
 
-	{#if connection === 'busy'}
+	{#if connection === 'busy' || connection === 'replaced'}
 		<RetroWindow title="already open ♡" accent="lavender">
 			<p class="busy">
-				This little room is open in another tab or on another device. Close it there, then come
-				back.
+				{connection === 'replaced'
+					? 'This room opened on another tab or device, so this window let go of it. Tap below to watch here instead.'
+					: 'This little room is open somewhere else. Close it there, then come back.'}
 			</p>
 			<div class="row">
-				<button class="btn btn--lav" onclick={() => session.signaling.connect()}>try again</button>
+				<button class="btn btn--lav" onclick={() => session.signaling.connect()}>
+					{connection === 'replaced' ? 'watch here ♡' : 'try again'}
+				</button>
 			</div>
 		</RetroWindow>
 	{:else}
@@ -179,6 +219,16 @@
 	@media (max-width: 860px) {
 		.grid {
 			grid-template-columns: minmax(0, 1fr);
+		}
+	}
+
+	@media (max-width: 640px) {
+		.grid {
+			gap: 12px;
+		}
+
+		.header {
+			gap: 8px;
 		}
 	}
 

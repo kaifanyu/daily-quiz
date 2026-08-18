@@ -37,10 +37,16 @@
 	--font-body: 'Nunito', ui-rounded, 'Segoe UI', system-ui, sans-serif;
 
 	min-height: 100vh;
+	/* `dvh` tracks a mobile browser's collapsing toolbars; `vh` above is the
+	   fallback for anything that doesn't understand it. */
+	min-height: 100dvh;
 	color: var(--ink);
 	font-family: var(--font-body);
 	font-size: 16px;
 	line-height: 1.55;
+	/* Stop iOS from inflating text when the phone is turned sideways. */
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
 	background-color: var(--cream);
 	/* Soft dithered dot texture instead of a heavy tiled GIF. */
 	background-image:
@@ -118,10 +124,22 @@ body:has(.retro) {
 .retro-shell {
 	max-width: 1120px;
 	margin: 0 auto;
-	padding: 18px 14px 40px;
+	/* The insets are 0 under the default `viewport-fit`, and keep content clear of
+	   the notch and the home indicator if the page is ever made edge-to-edge. */
+	padding: calc(18px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right))
+		calc(40px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
 	display: flex;
 	flex-direction: column;
 	gap: 16px;
+}
+
+@media (max-width: 640px) {
+	.retro-shell {
+		gap: 12px;
+		padding-left: calc(10px + env(safe-area-inset-left));
+		padding-right: calc(10px + env(safe-area-inset-right));
+		padding-bottom: calc(24px + env(safe-area-inset-bottom));
+	}
 }
 
 /* --------------------------------------------------------------- controls -- */
@@ -140,7 +158,11 @@ body:has(.retro) {
 	text-decoration: none;
 	display: inline-flex;
 	align-items: center;
+	justify-content: center;
 	gap: 8px;
+	/* Kill the double-tap-to-zoom delay and the grey flash on tap. */
+	touch-action: manipulation;
+	-webkit-tap-highlight-color: transparent;
 	transition:
 		transform 0.06s ease,
 		box-shadow 0.06s ease,
@@ -185,7 +207,9 @@ body:has(.retro) {
 
 .field {
 	font-family: var(--font-body);
-	font-size: 15px;
+	/* Never below 16px: iOS Safari zooms the whole page in when a smaller field
+	   takes focus, and it does not zoom back out. */
+	font-size: 16px;
 	color: var(--ink);
 	background: var(--paper);
 	border: var(--border);
@@ -211,6 +235,28 @@ body:has(.retro) {
 	flex-wrap: wrap;
 	align-items: center;
 	gap: 8px;
+}
+
+/* ------------------------------------------------------------ touch input -- */
+
+/*
+ * Touch targets: the pixel font is tiny by design, so on a touch device the
+ * controls are grown to the ~44px minimum instead of the type being scaled up.
+ */
+@media (pointer: coarse) {
+	.retro .btn {
+		min-height: 44px;
+		padding: 12px 16px;
+	}
+
+	.retro .btn--sm {
+		min-height: 38px;
+		padding: 10px 12px;
+	}
+
+	.retro .field {
+		padding: 11px 12px;
+	}
 }
 
 /* ------------------------------------------------------------- animations -- */
