@@ -19,7 +19,8 @@ import {
 	CHAT_BURST_LIMIT,
 	CHAT_BURST_WINDOW_MS,
 	CHAT_MIN_INTERVAL_MS,
-	CLOSE_VIEWER_BUSY,
+	CLOSE_REPLACED,
+	CLOSE_VIEWER_REPLACED,
 	clientMessageSchema,
 	MAX_CHAT_LENGTH,
 	WS_PROTOCOL,
@@ -74,32 +75,36 @@ export class LiveRoom extends DurableObject {
 			headers.set('sec-websocket-protocol', WS_PROTOCOL);
 		}
 
-		// FR-06: exactly one viewer. A second one is turned away politely rather
-		// than silently stealing the first one's stream.
-		if (role === 'viewer' && this.sockets('viewer').length > 0) {
-			this.ctx.acceptWebSocket(server, ['reject']);
-			this.send(server, {
-				type: 'error',
-				code: 'viewer_busy',
-				message: 'This little room is already open in another tab or device.'
-			});
-			server.close(CLOSE_VIEWER_BUSY, 'viewer_busy');
-			return new Response(null, { status: 101, webSocket: client, headers });
-		}
-
-		// A reconnecting broadcaster replaces the stale one.
-		if (role === 'broadcaster') {
-			for (const existing of this.sockets('broadcaster')) {
-				try {
-					existing.close(1000, 'replaced');
-				} catch {
-					// already gone
-				}
+		// FR-06 still keeps the room to one viewer and one broadcaster, but the
+		// *newest* connection wins instead of being turned away. A phone that was
+		// locked, backgrounded or handed between wifi and cellular is frozen without
+		// ever closing its socket, so refusing the new connection would leave the
+		// room to a ghost until that dead socket timed out minutes later (FR-08,
+		// FR-15). The identity is verified upstream, so there is nobody to steal
+		// from.
+		//
+		// The evicted socket gets a close code of its own so its page knows to stay
+		// down: closed with 1000 it reads as an ordinary drop, so it reconnects,
+		// evicts whoever replaced it, and the two churn forever — which is what made
+		// presence flap between connected and offline on both dashboards.
+		let streaming = false;
+		for (const existing of this.sockets(role)) {
+			// A broadcaster that merely reconnected still has a live camera, and the
+			// streaming flag lives on the socket it just lost. Carry it across so
+			// presence never dips to "camera off" and the viewer does not tear down a
+			// perfectly good peer connection.
+			if (role === 'broadcaster' && this.getAttachment(existing)?.streaming === true) {
+				streaming = true;
+			}
+			try {
+				existing.close(role === 'viewer' ? CLOSE_VIEWER_REPLACED : CLOSE_REPLACED, 'replaced');
+			} catch {
+				// already gone
 			}
 		}
 
 		this.ctx.acceptWebSocket(server, [role]);
-		this.setAttachment(server, { role, streaming: false, chatTimes: [] });
+		this.setAttachment(server, { role, streaming, chatTimes: [] });
 
 		this.send(server, { type: 'hello', role, serverTime: new Date().toISOString() });
 		this.broadcastPresence();

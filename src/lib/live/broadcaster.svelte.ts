@@ -42,7 +42,17 @@ export class BroadcasterSession {
 
 	constructor(ice: IceConfig, token: string) {
 		this.#ice = ice;
-		this.signaling = new Signaling({ role: 'broadcaster', token });
+		this.signaling = new Signaling({
+			role: 'broadcaster',
+			token,
+			// The room tracks `streaming` per socket, so a reconnected broadcaster
+			// turns up looking like a camera that is switched off — and the viewer,
+			// told the camera is asleep, drops the video and stops retrying. Say what
+			// the camera is actually doing every time the socket comes up.
+			onOpen: () => {
+				this.signaling.send({ type: 'broadcaster.state', streaming: this.streaming });
+			}
+		});
 	}
 
 	start(): void {

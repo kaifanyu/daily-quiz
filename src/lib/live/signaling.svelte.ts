@@ -55,6 +55,7 @@ export class Signaling {
 
 	#role: Role;
 	#token?: string;
+	#onOpen?: () => void;
 	#socket: WebSocket | null = null;
 	#handlers = new Set<(message: ServerMessage) => void>();
 	#reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -63,9 +64,13 @@ export class Signaling {
 	#stopped = false;
 	#lastPongAt = 0;
 
-	constructor(options: { role: Role; token?: string }) {
+	constructor(options: { role: Role; token?: string; onOpen?: () => void }) {
 		this.#role = options.role;
 		this.#token = options.token;
+		// Runs after every (re)connect, once the ready message is out. Anything the
+		// room only learns from the client — the broadcaster's camera state, say —
+		// has to be re-announced there, because a fresh socket starts blank.
+		this.#onOpen = options.onOpen;
 	}
 
 	/** Subscribe to server messages. Returns an unsubscribe function. */
@@ -158,6 +163,7 @@ export class Signaling {
 			this.state = 'open';
 			this.rejection = null;
 			this.send(this.#role === 'viewer' ? { type: 'viewer.ready' } : { type: 'broadcaster.ready' });
+			this.#onOpen?.();
 			this.#lastPongAt = Date.now();
 			this.#pingTimer = setInterval(() => {
 				if (Date.now() - this.#lastPongAt > PONG_TIMEOUT_MS) {
@@ -231,6 +237,9 @@ export class Signaling {
 			// Superseded by a newer socket for the same role. Reconnecting here would
 			// just evict whoever replaced us, so stay down and say so.
 			if (event.code === CLOSE_REPLACED) {
+				// Stay down until someone asks for the room back, so a wake-up from
+				// resume() cannot restart the eviction war either.
+				this.#stopped = true;
 				this.state = 'closed';
 				this.rejection = 'This page was opened somewhere else — reload to take it back.';
 				return;

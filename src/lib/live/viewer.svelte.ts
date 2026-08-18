@@ -42,6 +42,8 @@ export class ViewerSession {
 	#pendingCandidates: IceCandidate[] = [];
 	#noticeTimer: ReturnType<typeof setTimeout> | null = null;
 	#unsubscribe: (() => void) | null = null;
+	/** Last presence we acted on, so the camera coming back is a visible edge. */
+	#cameraLive = false;
 	#watchdogTimer: ReturnType<typeof setInterval> | null = null;
 	#detachLifecycle: (() => void) | null = null;
 	/** When the current attempt at getting video started, for the stall watchdog. */
@@ -64,9 +66,21 @@ export class ViewerSession {
 	start(): void {
 		this.#unsubscribe = this.signaling.on((message) => {
 			switch (message.type) {
-				case 'presence':
-					if (!message.broadcasterOnline || !message.streaming) this.#teardownPeer('offline');
+				case 'presence': {
+					const cameraLive = message.broadcasterOnline && message.streaming;
+					const wasLive = this.#cameraLive;
+					this.#cameraLive = cameraLive;
+					if (!cameraLive) {
+						this.#teardownPeer('offline');
+					} else if (!wasLive && this.videoState !== 'live') {
+						// The camera just came back — usually a broadcaster that reconnected
+						// or restarted its camera. Any peer connection we had died with the
+						// old session, so ask for a fresh offer now instead of sitting
+						// through the stall watchdog's twenty seconds.
+						this.#requestFreshStream();
+					}
 					break;
+				}
 				case 'webrtc.offer':
 					void this.#acceptOffer(message.sdp as RTCSessionDescriptionInit);
 					break;

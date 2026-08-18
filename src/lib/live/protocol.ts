@@ -117,4 +117,13 @@ export type ErrorCode =
 
 /** Close codes we use deliberately, so the UI can explain what happened. */
 export const CLOSE_VIEWER_BUSY = 4001;
+/**
+ * This socket was superseded by a newer one for the same role, so it must stay
+ * down. The distinct code is load-bearing: a plain 1000 reads as an ordinary
+ * drop, so the evicted page reconnects, evicts whoever replaced it, and the two
+ * churn against each other forever.
+ */
+export const CLOSE_REPLACED = 4002;
 export const CLOSE_UNAUTHORIZED = 4003;
+/** A newer viewer (another tab or device) took the room over from this one. */
+export const CLOSE_VIEWER_REPLACED = 4004;

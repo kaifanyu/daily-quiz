@@ -47,7 +47,9 @@
 	 */
 	async function unlock(event?: SubmitEvent) {
 		event?.preventDefault();
-		if (!token.trim()) return;
+		// Two sessions in one page would each hold a broadcaster socket and evict
+		// the other on every reconnect, so never start a second one.
+		if (!token.trim() || unlocking || session) return;
 		unlocking = true;
 		unlockError = null;
 
@@ -118,6 +120,15 @@
 				pulse={connection === 'open'}
 			/>
 		</div>
+
+		{#if session?.signaling.rejection}
+			<p class="warn warn--bad pixel" role="alert">
+				{session.signaling.rejection}
+				<button class="btn btn--sm btn--ghost" onclick={() => session?.signaling.connect()}>
+					reconnect
+				</button>
+			</p>
+		{/if}
 
 		{#if !data.tokenConfigured}
 			<p class="warn warn--bad pixel">
