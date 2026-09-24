@@ -1,75 +1,66 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import Button from '$lib/components/Button.svelte';
-	import StatCard from '$lib/components/StatCard.svelte';
-	import EmptyState from '$lib/components/EmptyState.svelte';
-	import Alert from '$lib/components/Alert.svelte';
-	import QuizListItem from '$lib/components/QuizListItem.svelte';
-	import { pct } from '$lib/format';
-
+	import { resolve } from '$app/paths';
+	import Labbook from '$lib/components/labbook/Labbook.svelte';
 	let { data }: { data: PageData } = $props();
-
-	const dash = $derived(data.data);
-	const recent = $derived(dash ? dash.history.slice(0, 6) : []);
 </script>
 
-<PageHeader title="Dashboard" subtitle="Your personal daily learning quiz.">
-	{#snippet actions()}
-		{#if dash?.latest_quiz_id}
-			<Button href={`/quiz/${dash.latest_quiz_id}`} variant="secondary" size="md">Latest quiz</Button>
-		{/if}
-		<Button href="/quiz/new" size="md">Generate quiz</Button>
-	{/snippet}
-</PageHeader>
+<svelte:head>
+	<title>Labbook — Papers and ideas</title>
+	<meta
+		name="description"
+		content="A collection of papers, research notes, and concepts. A workspace for understanding."
+	/>
+</svelte:head>
 
-{#if !data.configured}
-	<Alert tone="warning" title="Supabase is not configured">
-		Add <code class="rounded bg-surface-2 px-1">SUPABASE_URL</code> and
-		<code class="rounded bg-surface-2 px-1">SUPABASE_SERVICE_ROLE_KEY</code> to your
-		<code class="rounded bg-surface-2 px-1">.dev.vars</code> (local) or as Worker secrets, then reload.
-		See the README for setup steps.
-	</Alert>
-{:else if data.error}
-	<Alert tone="danger" title="Couldn't load the dashboard">{data.error}</Alert>
-{:else if dash}
-	<!-- Secondary stats — learning first, score second. -->
-	<div class="grid grid-cols-2 gap-4 lg:grid-cols-3">
-		<StatCard label="Quizzes" value={dash.stats.total_quizzes} />
-		<StatCard label="Completed" value={dash.stats.completed_quizzes} />
-		<StatCard
-			label="Avg MCQ accuracy"
-			value={pct(dash.stats.avg_mcq_accuracy)}
-			sub="across completed quizzes"
-		/>
-	</div>
-
-	<div class="mt-8">
-		<!-- Recent quizzes -->
-		<section>
-			<div class="mb-3 flex items-center justify-between">
-				<h2 class="text-lg font-semibold text-foreground">Recent quizzes</h2>
-				<a href="/history" class="text-sm font-medium text-primary hover:underline">View all</a>
-			</div>
-			{#if recent.length === 0}
-				<EmptyState
-					title="No quizzes yet"
-					description="Generate your first difficult daily quiz to start learning."
-				>
-					<Button href="/quiz/new">Generate quiz</Button>
-				</EmptyState>
-			{:else}
-				<div class="space-y-3">
-					{#each recent as item (item.quiz_id)}
-						<QuizListItem {item} />
-					{/each}
-				</div>
-			{/if}
-		</section>
-	</div>
-
-	<div class="mt-8 flex flex-wrap gap-3">
-		<Button href="/sources" variant="secondary">Manage source materials</Button>
-		<Button href="/prompts" variant="secondary">Edit AI prompts</Button>
-	</div>
+{#if data.library}
+	<Labbook library={data.library} canEdit={data.canEdit} storageMode={data.storageMode} />
+{:else}
+	<main class="notebook-message">
+		<p class="eyebrow">A workspace for understanding</p>
+		<h1>{data.locked ? 'Your research, together.' : 'Notebook unavailable'}</h1>
+		<p>
+			{data.locked ? 'Sign in to open your papers, concepts, and research notes.' : data.problem}
+		</p>
+		{#if data.locked}<a href={resolve('/login')}>Open your notebook</a>{:else}<a
+				href={resolve('/')}
+				data-sveltekit-reload>Try again</a
+			>{/if}
+	</main>
 {/if}
+
+<style>
+	.notebook-message {
+		max-width: 700px;
+		margin: 0 auto;
+		padding: 100px 28px;
+		color: #172332;
+		font-family: 'Segoe UI', sans-serif;
+	}
+	.eyebrow {
+		text-transform: uppercase;
+		letter-spacing: 1.5px;
+		font-size: 10px;
+		color: #75808e;
+	}
+	h1 {
+		font-size: 34px;
+		letter-spacing: -1px;
+		margin: 12px 0;
+		font-weight: 600;
+	}
+	p {
+		color: #75808e;
+		line-height: 1.8;
+	}
+	a {
+		display: inline-block;
+		margin-top: 22px;
+		background: #245ad6;
+		color: white;
+		border-radius: 5px;
+		padding: 11px 18px;
+		font-size: 13px;
+		text-decoration: none;
+	}
+</style>

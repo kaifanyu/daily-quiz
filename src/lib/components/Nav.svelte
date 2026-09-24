@@ -1,103 +1,124 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { resolve } from '$app/paths';
 	import ThemeToggle from './ThemeToggle.svelte';
-	import Button from './Button.svelte';
 
 	const links = [
-		{ href: '/', label: 'Dashboard' },
+		{ href: '/daily-quiz', label: 'Dashboard' },
 		{ href: '/history', label: 'History' },
-		{ href: '/notes', label: 'Notes' },
 		{ href: '/sources', label: 'Sources' },
 		{ href: '/topics', label: 'Topics' },
 		{ href: '/prompts', label: 'Prompts' }
-	];
-
-	let pathname = $derived(page.url.pathname);
-	let mobileOpen = $state(false);
-
+	] as const;
 	function isActive(href: string): boolean {
-		return href === '/' ? pathname === '/' : pathname.startsWith(href);
+		return page.url.pathname === href || page.url.pathname.startsWith(`${href}/`);
 	}
 </script>
 
-<header class="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur">
-	<nav class="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
-		<div class="flex items-center gap-6">
-			<a href="/" class="flex items-center gap-2.5">
-				<span
-					class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-bold text-white shadow-sm"
-					>DQ</span
-				>
-				<span class="text-base font-semibold text-foreground">Daily Quiz</span>
-			</a>
-
-			<div class="hidden items-center gap-1 md:flex">
-				{#each links as link (link.href)}
-					<a
-						href={link.href}
-						class="rounded-lg px-3 py-2 text-sm font-medium transition {isActive(link.href)
-							? 'bg-surface-2 text-foreground'
-							: 'text-muted hover:bg-surface-2 hover:text-foreground'}"
-					>
-						{link.label}
-					</a>
-				{/each}
-			</div>
-		</div>
-
-		<div class="flex items-center gap-2">
-			<div class="hidden sm:block">
-				<Button href="/quiz/new" size="sm">New Quiz</Button>
-			</div>
-			<ThemeToggle />
-			<button
-				type="button"
-				class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface text-foreground md:hidden"
-				aria-label="Toggle menu"
-				onclick={() => (mobileOpen = !mobileOpen)}
-			>
-				<svg
-					width="18"
-					height="18"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					aria-hidden="true"
-				>
-					{#if mobileOpen}
-						<path d="M18 6 6 18M6 6l12 12" />
-					{:else}
-						<path d="M3 12h18M3 6h18M3 18h18" />
-					{/if}
-				</svg>
-			</button>
-		</div>
-	</nav>
-
-	{#if mobileOpen}
-		<div class="border-t border-border bg-surface px-4 py-3 md:hidden">
-			<div class="flex flex-col gap-1">
-				{#each links as link (link.href)}
-					<a
-						href={link.href}
-						onclick={() => (mobileOpen = false)}
-						class="rounded-lg px-3 py-2 text-sm font-medium transition {isActive(link.href)
-							? 'bg-surface-2 text-foreground'
-							: 'text-muted hover:bg-surface-2'}"
-					>
-						{link.label}
-					</a>
-				{/each}
+<div class="quiz-toolbar">
+	<div class="toolbar-inner">
+		<span class="toolbar-label">QUIZ TOOLS</span>
+		<nav class="quiz-links" aria-label="Daily Quiz navigation">
+			{#each links as link (link.href)}
 				<a
-					href="/quiz/new"
-					onclick={() => (mobileOpen = false)}
-					class="mt-1 rounded-lg bg-primary px-3 py-2 text-center text-sm font-medium text-primary-foreground"
+					href={resolve(link.href)}
+					class:active={isActive(link.href)}
+					aria-current={isActive(link.href) ? 'page' : undefined}>{link.label}</a
 				>
-					New Quiz
-				</a>
-			</div>
+			{/each}
+		</nav>
+		<div class="quiz-actions">
+			<a class="new-quiz" href={resolve('/quiz/new')}>New quiz <span aria-hidden="true">+</span></a>
+			<ThemeToggle />
 		</div>
-	{/if}
-</header>
+	</div>
+</div>
+
+<style>
+	.quiz-toolbar {
+		border-bottom: 1px solid var(--border);
+		background: var(--surface);
+	}
+	.toolbar-inner {
+		display: flex;
+		align-items: center;
+		gap: 22px;
+		max-width: 1152px;
+		min-height: 62px;
+		padding: 10px 24px;
+		margin: 0 auto;
+	}
+	.toolbar-label {
+		font-size: 9px;
+		font-weight: 600;
+		letter-spacing: 1.5px;
+		white-space: nowrap;
+		color: var(--muted);
+	}
+	.quiz-links {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		min-width: 0;
+	}
+	.quiz-links a {
+		padding: 7px 10px;
+		border-radius: 4px;
+		font-size: 12px;
+		font-weight: 500;
+		color: var(--muted);
+		text-decoration: none;
+		white-space: nowrap;
+	}
+	.quiz-links a:hover {
+		color: var(--primary);
+		background: var(--surface-2);
+	}
+	.quiz-links a.active {
+		color: var(--primary);
+		background: var(--surface-2);
+	}
+	.quiz-actions {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		margin-left: auto;
+	}
+	.new-quiz {
+		display: flex;
+		gap: 14px;
+		align-items: center;
+		white-space: nowrap;
+		padding: 8px 12px;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		color: var(--primary);
+		text-decoration: none;
+		font-size: 11px;
+		font-weight: 600;
+	}
+	.new-quiz:hover {
+		border-color: var(--primary);
+	}
+	.new-quiz span {
+		font-size: 16px;
+		line-height: 1;
+		font-weight: 400;
+	}
+	@media (max-width: 720px) {
+		.toolbar-inner {
+			flex-wrap: wrap;
+			padding: 12px 16px 8px;
+			gap: 10px;
+		}
+		.quiz-links {
+			order: 3;
+			width: 100%;
+			overflow-x: auto;
+			padding-bottom: 2px;
+		}
+		.quiz-links a {
+			padding: 8px 10px;
+		}
+	}
+</style>

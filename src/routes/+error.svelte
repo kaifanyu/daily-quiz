@@ -12,11 +12,11 @@
 		{#if page.status === 404}
 			The page you're looking for doesn't exist.
 		{:else}
-			An unexpected error occurred. Try again or head back to the dashboard.
+			An unexpected error occurred. Try again or head back to Labbook.
 		{/if}
 	</p>
 	<div class="mt-6 flex gap-3">
-		<Button href="/">Back to dashboard</Button>
-		<Button href="/quiz/new" variant="secondary">New quiz</Button>
+		<Button href="/">Back to Labbook</Button>
+		<Button href="/daily-quiz" variant="secondary">Daily Quiz</Button>
 	</div>
 </div>

@@ -1,5 +1,8 @@
 node_modules
 
+# Local research library and migration backups (never public build assets)
+.labbook/
+
 # Output
 .output
 .vercel

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import type { PageData } from './$types';
 	import Badge from '$lib/components/Badge.svelte';
 	import Button from '$lib/components/Button.svelte';
@@ -18,12 +19,16 @@
 </script>
 
 <div class="mb-6">
-	<a href="/" class="text-sm font-medium text-primary hover:underline">← Dashboard</a>
+	<a href={resolve('/daily-quiz')} class="text-sm font-medium text-primary hover:underline"
+		>← Dashboard</a
+	>
 	<h1 class="mt-2 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">{quiz.title}</h1>
 	<p class="mt-1 text-sm text-muted">Completed {formatDate(data.submission.created_at)}</p>
 	<div class="mt-3 flex flex-wrap items-center gap-2">
 		<Badge tone="primary" class="capitalize">{quiz.difficulty}</Badge>
-		<Badge tone="neutral">MCQ {evaluation.mcq_correct}/{evaluation.mcq_total} · {pct(accuracy)}</Badge>
+		<Badge tone="neutral"
+			>MCQ {evaluation.mcq_correct}/{evaluation.mcq_total} · {pct(accuracy)}</Badge
+		>
 	</div>
 </div>
 

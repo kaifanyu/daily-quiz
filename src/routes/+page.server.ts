@@ -1,18 +1,31 @@
 import type { PageServerLoad } from './$types';
-import { tryGetDb } from '$lib/server/services';
-import { getDashboardData } from '$lib/server/supabase/repo';
+import { getNotebookAccess } from '$lib/server/labbook/auth';
+import { readNotebook } from '$lib/server/labbook/library';
 
-export const load: PageServerLoad = async ({ platform }) => {
-	const db = tryGetDb(platform);
-	if (!db) return { configured: false, data: null, error: null };
+export const load: PageServerLoad = async (event) => {
+	const access = await getNotebookAccess(event);
+	const storageMode = access.local ? ('local' as const) : ('cloud' as const);
+	if (!access.canRead)
+		return { library: null, canEdit: false, storageMode, locked: true, problem: null };
 	try {
-		const data = await getDashboardData(db);
-		return { configured: true, data, error: null };
-	} catch (e) {
 		return {
-			configured: true,
-			data: null,
-			error: e instanceof Error ? e.message : 'Failed to load dashboard data.'
+			library: await readNotebook(event),
+			canEdit: access.canEdit,
+			storageMode,
+			locked: false,
+			problem: null
+		};
+	} catch (error) {
+		console.error(
+			'Notebook load failed:',
+			error instanceof Error ? error.message : 'unknown error'
+		);
+		return {
+			library: null,
+			canEdit: access.canEdit,
+			storageMode,
+			locked: false,
+			problem: 'The notebook could not be opened. Please try again shortly.'
 		};
 	}
 };
