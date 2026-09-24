@@ -13,21 +13,15 @@
 	"workers_dev": true,
 	"preview_urls": true,
 
-	// /live — the private webcam + chat room. One Durable Object instance holds
-	// the broadcaster and viewer sockets and relays WebRTC signaling + chat.
-	// Video never passes through it.
-	"durable_objects": {
-		"bindings": [
-			{
-				"name": "LIVE_ROOM",
-				"class_name": "LiveRoom"
-			}
-		]
-	},
+	// Keep deployed migration history; retire the removed webcam room on the next deploy.
 	"migrations": [
 		{
 			"tag": "v1",
 			"new_sqlite_classes": ["LiveRoom"]
+		},
+		{
+			"tag": "v2-remove-livestream",
+			"deleted_classes": ["LiveRoom"]
 		}
 	]
 }

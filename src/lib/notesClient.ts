@@ -1,4 +1,5 @@
 import { goto } from '$app/navigation';
+import { resolve } from '$app/paths';
 import type { NotesStore } from '$lib/notesStore.svelte';
 import type { Note } from '$lib/types/quiz';
 
@@ -9,7 +10,7 @@ export async function createAndOpenNote(store: NotesStore, category = 'General')
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({ category })
 	});
-	if (!res.ok) throw new Error('Failed to create note');
+	if (!res.ok) throw new Error('The post could not be created. Please try again.');
 	const note = (await res.json()) as Note;
 	store.upsert({
 		id: note.id,
@@ -18,5 +19,5 @@ export async function createAndOpenNote(store: NotesStore, category = 'General')
 		pinned: note.pinned,
 		updated_at: note.updated_at
 	});
-	await goto(`/notes/${note.id}`);
+	await goto(`${resolve('/blogs/[id]', { id: note.id })}?edit=1`);
 }

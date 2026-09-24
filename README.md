@@ -1,6 +1,6 @@
 # Labbook
 
-A SvelteKit research notebook using the original Labbook design. Papers are the homepage, Concepts are freeform topic notes, the existing rich-text Notes collection is available to the owner, and Daily Quiz lives at `/daily-quiz`. The existing quiz routes and private `/live` room remain in this application.
+A SvelteKit research notebook using the original Labbook design. Papers are the homepage, Concepts are freeform topic notes, Blogs are public posts, and Daily Quiz lives at `/daily-quiz`. Papers, concepts, and blogs are readable without an account; sign in only to write and manage content.
 
 ## Run locally
 
@@ -19,9 +19,15 @@ Local Vite development reads and saves `.labbook/library.json`, with `.labbook/l
 - Autosave with revision conflicts, browser draft recovery, and JSON import/export.
 - Public reading, owner-only editing. New paper/concept notes become public when saved to the hosted library.
 
+## Blogs
+
+`/blogs` lists public posts, and `/blogs/[id]` opens a reading view. Signed-in owners can create posts or select **Edit post** to use the existing rich-text editor. Images, lists, categories, and pinned posts are preserved.
+
+Blogs reuse the existing `notes` database table, image storage, and `/api/notes` endpoints, so renaming the section does not move or erase your content. Old `/notes` links redirect to `/blogs`, including individual posts. Existing notes are now public blog posts.
+
 ## Hosted storage and owner access
 
-This repo currently targets **Cloudflare Workers with static assets**, using `@sveltejs/adapter-cloudflare`. Keep the existing deployment target, Durable Object binding, and build command; changing to a Pages deployment would break the live-room setup.
+This repo targets **Cloudflare Workers with static assets**, using `@sveltejs/adapter-cloudflare`. The webcam/live-stream feature, routes, and binding have been removed. Wrangler retains its original migration history and adds a deletion migration to retire the former Durable Object on the next deployment.
 
 The hosted notebook uses the **same Supabase project as Daily Quiz**, in a separate `research_libraries` table. It keeps the full library document, including attachments, plus one previous version. A database function checks the expected revision and updates the library and backup atomically. The table and function are inaccessible to anonymous/browser database clients; all access passes through SvelteKit server routes.
 
@@ -38,7 +44,7 @@ Before deploying the new homepage:
 
    The first command is a dry run with no network or writes. The second saves local backups of the source and remote library before uploading. It refuses to replace a nonempty remote library. To add newer notes to an existing hosted collection, use `--apply --merge`; changed versions are retained as separate entries. The source file is never modified.
 
-4. Set `LABBOOK_ADMIN_PASSWORD` as a Worker secret, using a randomly generated password of at least 20 characters. A local password has been generated in the ignored `.dev.vars` file. Store the chosen password in your password manager. `LABBOOK_PUBLIC_READ` defaults to `true`; set it to `false` only if you later want a private notebook.
+4. Set `LABBOOK_ADMIN_PASSWORD` as a Worker secret, using a randomly generated password of at least 20 characters. A local password is configured in the ignored `.dev.vars` file. Store the chosen password in your password manager. Reading papers, concepts, and blogs is always public; editing requires the owner password.
 5. Authenticate Wrangler, then run the checks and deploy through the existing pipeline or CLI:
 
    ```powershell
@@ -49,7 +55,7 @@ Before deploying the new homepage:
    yarn wrangler deploy
    ```
 
-Open `/login` on the deployed site to edit. Sessions use a signed, secure, HTTP-only cookie and expire after 12 hours. Rotating the password invalidates prior sessions. The original `/live` Cloudflare Access configuration remains separate.
+Use **Owner sign in** or open `/login` on the deployed site to edit. This is a single shared owner password, with no account registration, email provider, or separate authentication service. Sessions use a signed, secure, HTTP-only cookie and expire after 12 hours. Rotating the password invalidates prior sessions. **Sign out** returns to public reading.
 
 The current checkout did not contain Supabase connection values and Wrangler was not signed in when this integration was prepared. The SQL migration and cloud import therefore need to be completed before publishing; the live site has not been changed.
 
@@ -59,7 +65,7 @@ To test against Supabase during Vite development, set `LABBOOK_STORAGE=cloud` in
 
 ```powershell
 yarn run check
-node --test tests/labbook-*.test.mjs
+node --test tests/*.test.mjs
 yarn build
 ```
 

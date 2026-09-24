@@ -12,7 +12,7 @@
 	const links = [
 		{ href: '/', label: 'Papers', section: 'papers' },
 		{ href: '/#/concepts', label: 'Concepts', section: 'concepts' },
-		{ href: '/notes', label: 'Notes', section: 'notes' },
+		{ href: '/blogs', label: 'Blogs', section: 'blogs' },
 		{ href: '/daily-quiz', label: 'Daily Quiz', section: 'quiz' }
 	] as const;
 	let hash = $derived(browserHash ?? page.url.hash);
@@ -21,8 +21,8 @@
 			? /^#\/(concepts|concept\/)/.test(hash)
 				? 'concepts'
 				: 'papers'
-			: page.url.pathname === '/notes' || page.url.pathname.startsWith('/notes/')
-				? 'notes'
+			: page.url.pathname === '/blogs' || page.url.pathname.startsWith('/blogs/')
+				? 'blogs'
 				: ['/daily-quiz', '/quiz', '/history', '/sources', '/topics', '/prompts'].some(
 							(path) => page.url.pathname === path || page.url.pathname.startsWith(`${path}/`)
 					  )

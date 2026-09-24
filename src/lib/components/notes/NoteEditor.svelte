@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import type { Editor } from '@tiptap/core';
 	import type { ImageAlign } from '$lib/components/notes/resizable-image';
 	import type { Note } from '$lib/types/quiz';
@@ -36,33 +37,50 @@
 		timer = setTimeout(() => flush(), 700);
 	}
 
-	async function flush(keepalive = false) {
+	let inFlight: Promise<boolean> | null = null;
+	async function flush(keepalive = false): Promise<boolean> {
 		if (timer) {
 			clearTimeout(timer);
 			timer = null;
 		}
-		const body = pending;
-		if (Object.keys(body).length === 0) return;
-		pending = {};
-		try {
-			const res = await fetch(`/api/notes/${note.id}`, {
-				method: 'PATCH',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify(body),
-				keepalive
-			});
-			if (!res.ok) throw new Error(String(res.status));
-			saveState = 'saved';
-			store.patch(note.id, {
-				...('title' in body ? { title: body.title } : {}),
-				...('category' in body ? { category: body.category } : {}),
-				...('pinned' in body ? { pinned: body.pinned } : {}),
-				updated_at: new Date().toISOString()
-			});
-		} catch {
-			saveState = 'error';
-			pending = { ...body, ...pending }; // re-queue so edits aren't lost
+		if (inFlight) {
+			const saved = await inFlight;
+			return saved ? flush(keepalive) : false;
 		}
+		const body = pending;
+		if (Object.keys(body).length === 0) return saveState !== 'error';
+		pending = {};
+		inFlight = (async () => {
+			try {
+				const res = await fetch(`/api/notes/${note.id}`, {
+					method: 'PATCH',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify(body),
+					keepalive
+				});
+				if (!res.ok) throw new Error(String(res.status));
+				saveState = Object.keys(pending).length ? 'saving' : 'saved';
+				store.patch(note.id, {
+					...('title' in body ? { title: body.title } : {}),
+					...('category' in body ? { category: body.category } : {}),
+					...('pinned' in body ? { pinned: body.pinned } : {}),
+					updated_at: new Date().toISOString()
+				});
+				return true;
+			} catch {
+				saveState = 'error';
+				pending = { ...body, ...pending };
+				return false;
+			}
+		})();
+		const saved = await inFlight;
+		inFlight = null;
+		return saved && Object.keys(pending).length ? flush(keepalive) : saved;
+	}
+	async function doneReading() {
+		if (!(await flush())) return;
+		await invalidateAll();
+		await goto(resolve('/blogs/[id]', { id: note.id }));
 	}
 
 	// --- Images -----------------------------------------------------------------
@@ -93,7 +111,8 @@
 	/** Current alignment of the selection — image `align` attr or text-align. */
 	function currentAlign(): 'left' | 'center' | 'right' {
 		if (!editor) return 'left';
-		if (editor.isActive('image')) return (editor.getAttributes('image').align as ImageAlign) ?? 'center';
+		if (editor.isActive('image'))
+			return (editor.getAttributes('image').align as ImageAlign) ?? 'center';
 		if (editor.isActive({ textAlign: 'center' })) return 'center';
 		if (editor.isActive({ textAlign: 'right' })) return 'right';
 		return 'left';
@@ -125,7 +144,8 @@
 	/** Align text (paragraphs/headings) or, when an image is selected, the image. */
 	function setAlign(a: ImageAlign) {
 		if (!editor) return;
-		if (editor.isActive('image')) editor.chain().focus().updateAttributes('image', { align: a }).run();
+		if (editor.isActive('image'))
+			editor.chain().focus().updateAttributes('image', { align: a }).run();
 		else editor.chain().focus().setTextAlign(a).run();
 		updateToolbar();
 	}
@@ -150,12 +170,16 @@
 	}
 
 	async function deleteNote() {
-		if (!window.confirm('Delete this note? This also removes its images.')) return;
-		if (timer) clearTimeout(timer);
-		pending = {};
-		await fetch(`/api/notes/${note.id}`, { method: 'DELETE' });
-		store.remove(note.id);
-		await goto('/notes');
+		if (!window.confirm('Delete this post? This also removes its images.')) return;
+		if (!(await flush())) return;
+		try {
+			const response = await fetch(`/api/notes/${note.id}`, { method: 'DELETE' });
+			if (!response.ok) throw new Error('Delete failed');
+			store.remove(note.id);
+			await goto(resolve('/blogs'));
+		} catch {
+			saveState = 'error';
+		}
 	}
 
 	// --- Lifecycle --------------------------------------------------------------
@@ -234,16 +258,27 @@
 	});
 </script>
 
+<svelte:head><title>Edit {title || 'Untitled post'} ? Blogs</title></svelte:head>
 <div class="flex h-full flex-col">
 	<!-- Header -->
 	<div class="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
 		<div class="flex min-w-0 items-center gap-2">
 			<a
-				href="/notes"
+				href={resolve('/blogs')}
 				class="rounded-lg p-1.5 text-muted transition hover:bg-surface-2 hover:text-foreground lg:hidden"
-				aria-label="Back to notes"
+				aria-label="Back to blogs"
 			>
-				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<svg
+					width="18"
+					height="18"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
 					<path d="m15 18-6-6 6-6" />
 				</svg>
 			</a>
@@ -261,14 +296,30 @@
 		<div class="flex items-center gap-0.5">
 			<button
 				type="button"
+				onclick={doneReading}
+				class="mr-2 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-surface-2"
+				>Done</button
+			>
+			<button
+				type="button"
 				onclick={togglePin}
 				class="rounded-lg p-2 transition hover:bg-surface-2 {pinned
 					? 'text-primary'
 					: 'text-muted hover:text-foreground'}"
-				aria-label={pinned ? 'Unpin note' : 'Pin note'}
+				aria-label={pinned ? 'Unpin post' : 'Pin post'}
 				title={pinned ? 'Unpin' : 'Pin'}
 			>
-				<svg width="16" height="16" viewBox="0 0 24 24" fill={pinned ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<svg
+					width="16"
+					height="16"
+					viewBox="0 0 24 24"
+					fill={pinned ? 'currentColor' : 'none'}
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
 					<path d="M16 3v2l-1 1v5l3 3v2h-5v5l-1 1-1-1v-5H5v-2l3-3V6L7 5V3z" />
 				</svg>
 			</button>
@@ -276,11 +327,23 @@
 				type="button"
 				onclick={deleteNote}
 				class="rounded-lg p-2 text-muted transition hover:bg-danger-soft hover:text-danger"
-				aria-label="Delete note"
+				aria-label="Delete post"
 				title="Delete"
 			>
-				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-					<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+				<svg
+					width="16"
+					height="16"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<path
+						d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+					/>
 				</svg>
 			</button>
 		</div>
@@ -293,6 +356,7 @@
 				type="text"
 				bind:value={title}
 				oninput={() => scheduleSave({ title })}
+				aria-label="Post title"
 				placeholder="Untitled"
 				class="w-full bg-transparent text-3xl font-bold tracking-tight text-foreground placeholder:text-muted/50 focus-visible:outline-none"
 			/>
@@ -302,49 +366,251 @@
 					type="text"
 					bind:value={category}
 					oninput={() => scheduleSave({ category })}
+					aria-label="Post category"
 					placeholder="General"
 					class="rounded-md border border-transparent bg-surface-2 px-2 py-0.5 text-sm font-medium text-foreground transition hover:border-border focus-visible:border-primary focus-visible:outline-none"
 				/>
 			</div>
 
 			<!-- Toolbar -->
-			<div class="sticky top-0 z-10 -mx-1 mt-5 mb-3 flex flex-wrap items-center gap-0.5 rounded-lg border border-border bg-surface/95 p-1 backdrop-blur">
-				<button type="button" class={btnCls(active.bold)} title="Bold" aria-label="Bold" disabled={!editorReady} onclick={() => editor?.chain().focus().toggleBold().run()}><span class="font-bold">B</span></button>
-				<button type="button" class={btnCls(active.italic)} title="Italic" aria-label="Italic" disabled={!editorReady} onclick={() => editor?.chain().focus().toggleItalic().run()}><span class="italic">I</span></button>
-				<button type="button" class={btnCls(active.underline)} title="Underline" aria-label="Underline" disabled={!editorReady} onclick={() => editor?.chain().focus().toggleUnderline().run()}><span class="underline">U</span></button>
-				<button type="button" class={btnCls(active.strike)} title="Strikethrough" aria-label="Strikethrough" disabled={!editorReady} onclick={() => editor?.chain().focus().toggleStrike().run()}><span class="line-through">S</span></button>
+			<div
+				class="sticky top-0 z-10 -mx-1 mt-5 mb-3 flex flex-wrap items-center gap-0.5 rounded-lg border border-border bg-surface/95 p-1 backdrop-blur"
+			>
+				<button
+					type="button"
+					class={btnCls(active.bold)}
+					title="Bold"
+					aria-label="Bold"
+					disabled={!editorReady}
+					onclick={() => editor?.chain().focus().toggleBold().run()}
+					><span class="font-bold">B</span></button
+				>
+				<button
+					type="button"
+					class={btnCls(active.italic)}
+					title="Italic"
+					aria-label="Italic"
+					disabled={!editorReady}
+					onclick={() => editor?.chain().focus().toggleItalic().run()}
+					><span class="italic">I</span></button
+				>
+				<button
+					type="button"
+					class={btnCls(active.underline)}
+					title="Underline"
+					aria-label="Underline"
+					disabled={!editorReady}
+					onclick={() => editor?.chain().focus().toggleUnderline().run()}
+					><span class="underline">U</span></button
+				>
+				<button
+					type="button"
+					class={btnCls(active.strike)}
+					title="Strikethrough"
+					aria-label="Strikethrough"
+					disabled={!editorReady}
+					onclick={() => editor?.chain().focus().toggleStrike().run()}
+					><span class="line-through">S</span></button
+				>
 				<span class="mx-1 h-5 w-px bg-border"></span>
-				<button type="button" class={btnCls(active.h1)} title="Heading 1" aria-label="Heading 1" disabled={!editorReady} onclick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()}>H1</button>
-				<button type="button" class={btnCls(active.h2)} title="Heading 2" aria-label="Heading 2" disabled={!editorReady} onclick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}>H2</button>
-				<button type="button" class={btnCls(active.h3)} title="Heading 3" aria-label="Heading 3" disabled={!editorReady} onclick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()}>H3</button>
+				<button
+					type="button"
+					class={btnCls(active.h1)}
+					title="Heading 1"
+					aria-label="Heading 1"
+					disabled={!editorReady}
+					onclick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()}>H1</button
+				>
+				<button
+					type="button"
+					class={btnCls(active.h2)}
+					title="Heading 2"
+					aria-label="Heading 2"
+					disabled={!editorReady}
+					onclick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}>H2</button
+				>
+				<button
+					type="button"
+					class={btnCls(active.h3)}
+					title="Heading 3"
+					aria-label="Heading 3"
+					disabled={!editorReady}
+					onclick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()}>H3</button
+				>
 				<span class="mx-1 h-5 w-px bg-border"></span>
-				<button type="button" class={btnCls(active.bullet)} title="Bullet list" aria-label="Bullet list" disabled={!editorReady} onclick={() => editor?.chain().focus().toggleBulletList().run()}>•</button>
-				<button type="button" class={btnCls(active.ordered)} title="Numbered list" aria-label="Numbered list" disabled={!editorReady} onclick={() => editor?.chain().focus().toggleOrderedList().run()}>1.</button>
-				<button type="button" class={btnCls(active.task)} title="Checklist" aria-label="Checklist" disabled={!editorReady} onclick={() => editor?.chain().focus().toggleTaskList().run()}>☑</button>
-				<button type="button" class={btnCls(active.quote)} title="Quote" aria-label="Quote" disabled={!editorReady} onclick={() => editor?.chain().focus().toggleBlockquote().run()}>❝</button>
-				<button type="button" class={btnCls(active.code)} title="Code block" aria-label="Code block" disabled={!editorReady} onclick={() => editor?.chain().focus().toggleCodeBlock().run()}>&lt;/&gt;</button>
+				<button
+					type="button"
+					class={btnCls(active.bullet)}
+					title="Bullet list"
+					aria-label="Bullet list"
+					disabled={!editorReady}
+					onclick={() => editor?.chain().focus().toggleBulletList().run()}>•</button
+				>
+				<button
+					type="button"
+					class={btnCls(active.ordered)}
+					title="Numbered list"
+					aria-label="Numbered list"
+					disabled={!editorReady}
+					onclick={() => editor?.chain().focus().toggleOrderedList().run()}>1.</button
+				>
+				<button
+					type="button"
+					class={btnCls(active.task)}
+					title="Checklist"
+					aria-label="Checklist"
+					disabled={!editorReady}
+					onclick={() => editor?.chain().focus().toggleTaskList().run()}>☑</button
+				>
+				<button
+					type="button"
+					class={btnCls(active.quote)}
+					title="Quote"
+					aria-label="Quote"
+					disabled={!editorReady}
+					onclick={() => editor?.chain().focus().toggleBlockquote().run()}>❝</button
+				>
+				<button
+					type="button"
+					class={btnCls(active.code)}
+					title="Code block"
+					aria-label="Code block"
+					disabled={!editorReady}
+					onclick={() => editor?.chain().focus().toggleCodeBlock().run()}>&lt;/&gt;</button
+				>
 				<span class="mx-1 h-5 w-px bg-border"></span>
-				<button type="button" class={btnCls(active.link)} title="Link" aria-label="Link" disabled={!editorReady} onclick={setLink}>
-					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
+				<button
+					type="button"
+					class={btnCls(active.link)}
+					title="Link"
+					aria-label="Link"
+					disabled={!editorReady}
+					onclick={setLink}
+				>
+					<svg
+						width="15"
+						height="15"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+						><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path
+							d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"
+						/></svg
+					>
 				</button>
-				<button type="button" class={btnCls(false)} title="Insert image" aria-label="Insert image" disabled={!editorReady} onclick={() => imgInput?.click()}>
-					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" /></svg>
+				<button
+					type="button"
+					class={btnCls(false)}
+					title="Insert image"
+					aria-label="Insert image"
+					disabled={!editorReady}
+					onclick={() => imgInput?.click()}
+				>
+					<svg
+						width="15"
+						height="15"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+						><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path
+							d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"
+						/></svg
+					>
 				</button>
 				<span class="mx-1 h-5 w-px bg-border"></span>
-				<button type="button" class={btnCls(active.alignLeft)} title="Align left" aria-label="Align left" disabled={!editorReady} onclick={() => setAlign('left')}>
-					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M3 12h12M3 18h15" /></svg>
+				<button
+					type="button"
+					class={btnCls(active.alignLeft)}
+					title="Align left"
+					aria-label="Align left"
+					disabled={!editorReady}
+					onclick={() => setAlign('left')}
+				>
+					<svg
+						width="15"
+						height="15"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"><path d="M3 6h18M3 12h12M3 18h15" /></svg
+					>
 				</button>
-				<button type="button" class={btnCls(active.alignCenter)} title="Align center" aria-label="Align center" disabled={!editorReady} onclick={() => setAlign('center')}>
-					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M6 12h12M5 18h14" /></svg>
+				<button
+					type="button"
+					class={btnCls(active.alignCenter)}
+					title="Align center"
+					aria-label="Align center"
+					disabled={!editorReady}
+					onclick={() => setAlign('center')}
+				>
+					<svg
+						width="15"
+						height="15"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"><path d="M3 6h18M6 12h12M5 18h14" /></svg
+					>
 				</button>
-				<button type="button" class={btnCls(active.alignRight)} title="Align right" aria-label="Align right" disabled={!editorReady} onclick={() => setAlign('right')}>
-					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 12h12M6 18h15" /></svg>
+				<button
+					type="button"
+					class={btnCls(active.alignRight)}
+					title="Align right"
+					aria-label="Align right"
+					disabled={!editorReady}
+					onclick={() => setAlign('right')}
+				>
+					<svg
+						width="15"
+						height="15"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"><path d="M3 6h18M9 12h12M6 18h15" /></svg
+					>
 				</button>
 			</div>
 
 			<!-- ProseMirror mounts here -->
-			<div class="editor min-h-[50vh]" bind:this={element}></div>
-			<input type="file" accept="image/*" class="hidden" bind:this={imgInput} onchange={onPickImage} />
+			<div
+				class="editor min-h-[50vh]"
+				{@attach (node) => {
+					element = node;
+					return () => {
+						element = null;
+					};
+				}}
+			></div>
+			<input
+				type="file"
+				accept="image/*"
+				aria-label="Choose an image for this post"
+				class="hidden"
+				{@attach (node) => {
+					imgInput = node;
+					return () => {
+						imgInput = null;
+					};
+				}}
+				onchange={onPickImage}
+			/>
 		</div>
 	</div>
 </div>

@@ -18,14 +18,9 @@
 {:else}
 	<main class="notebook-message">
 		<p class="eyebrow">A workspace for understanding</p>
-		<h1>{data.locked ? 'Your research, together.' : 'Notebook unavailable'}</h1>
-		<p>
-			{data.locked ? 'Sign in to open your papers, concepts, and research notes.' : data.problem}
-		</p>
-		{#if data.locked}<a href={resolve('/login')}>Open your notebook</a>{:else}<a
-				href={resolve('/')}
-				data-sveltekit-reload>Try again</a
-			>{/if}
+		<h1>Notebook unavailable</h1>
+		<p>{data.problem}</p>
+		<a href={resolve('/')} data-sveltekit-reload>Try again</a>
 	</main>
 {/if}
 

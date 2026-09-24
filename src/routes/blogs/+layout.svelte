@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { untrack, type Snippet } from 'svelte';
 	import { page } from '$app/state';
+	import { resolve } from '$app/paths';
 	import type { LayoutData } from './$types';
 	import { createNotesStore } from '$lib/notesStore.svelte';
 	import { createAndOpenNote } from '$lib/notesClient';
 	import { formatDateTime } from '$lib/format';
 	import Badge from '$lib/components/Badge.svelte';
-	import Alert from '$lib/components/Alert.svelte';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
 
@@ -17,6 +17,7 @@
 	let query = $state('');
 	let activeCategory = $state('All');
 	let creating = $state(false);
+	let creationError = $state('');
 
 	const activeId = $derived(page.params.id ?? null);
 
@@ -40,54 +41,81 @@
 	});
 
 	async function newNote() {
+		if (!data.notebookAccess.canEdit) return;
 		creating = true;
+		creationError = '';
 		try {
 			await createAndOpenNote(store, activeCategory !== 'All' ? activeCategory : 'General');
+		} catch (error) {
+			creationError = error instanceof Error ? error.message : 'The post could not be created.';
 		} finally {
 			creating = false;
 		}
 	}
 </script>
 
+<svelte:head><title>Blogs — Labbook</title></svelte:head>
 {#if !data.configured}
-	<Alert tone="warning" title="Supabase is not configured">
-		Set <code class="rounded bg-surface-2 px-1">SUPABASE_URL</code> and
-		<code class="rounded bg-surface-2 px-1">SUPABASE_SERVICE_ROLE_KEY</code>, then run the
-		<code class="rounded bg-surface-2 px-1">0002_notes.sql</code> migration to start writing notes.
-	</Alert>
+	<section class="rounded-xl border border-border bg-surface px-6 py-16 text-center">
+		<h1 class="text-2xl font-semibold text-foreground">Blogs</h1>
+		<p class="mt-3 text-sm text-muted">
+			A place for longer thoughts, ideas, and things worth sharing.
+		</p>
+		<p class="mt-5 text-sm text-muted">Posts will appear here soon.</p>
+	</section>
 {:else}
 	<div
 		class="grid h-[calc(100dvh-8rem)] overflow-hidden rounded-xl border border-border bg-surface shadow-sm lg:grid-cols-[300px_1fr]"
 	>
 		<!-- Sidebar -->
 		<aside
-			class="min-h-0 flex-col border-border lg:flex lg:border-r {activeId
-				? 'hidden'
-				: 'flex'}"
+			class="min-h-0 flex-col border-border lg:flex lg:border-r {activeId ? 'hidden' : 'flex'}"
 		>
 			<div class="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
-				<h1 class="text-lg font-bold text-foreground">Notes</h1>
-				<button
-					type="button"
-					onclick={newNote}
-					disabled={creating}
-					class="inline-flex items-center gap-1.5 rounded-lg bg-primary px-2.5 py-1.5 text-sm font-medium text-primary-foreground transition hover:bg-primary-hover disabled:opacity-50"
-				>
-					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
-						<path d="M12 5v14M5 12h14" />
-					</svg>
-					New
-				</button>
+				<h1 class="text-lg font-bold text-foreground">Blogs</h1>
+				{#if data.notebookAccess.canEdit}<button
+						type="button"
+						onclick={newNote}
+						disabled={creating}
+						class="inline-flex items-center gap-1.5 rounded-lg bg-primary px-2.5 py-1.5 text-sm font-medium text-primary-foreground transition hover:bg-primary-hover disabled:opacity-50"
+					>
+						<svg
+							width="15"
+							height="15"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2.2"
+							stroke-linecap="round"
+							aria-hidden="true"
+						>
+							<path d="M12 5v14M5 12h14" />
+						</svg>
+						New post
+					</button>{/if}
 			</div>
 
+			{#if creationError}<p class="px-4 py-3 text-sm text-danger" role="alert">
+					{creationError}
+				</p>{/if}
 			<div class="space-y-2 border-b border-border px-3 py-3">
 				<div class="relative">
-					<svg class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+					<svg
+						class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted"
+						width="15"
+						height="15"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						aria-hidden="true"
+					>
 						<circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
 					</svg>
 					<input
 						type="search"
-						placeholder="Search notes…"
+						placeholder="Search posts…"
 						bind:value={query}
 						class="w-full rounded-lg border border-border bg-background py-1.5 pl-8 pr-2 text-sm text-foreground placeholder:text-muted focus-visible:border-primary focus-visible:outline-none"
 					/>
@@ -97,7 +125,8 @@
 						<button
 							type="button"
 							onclick={() => (activeCategory = 'All')}
-							class="rounded-full px-2.5 py-0.5 text-xs font-medium transition {activeCategory === 'All'
+							class="rounded-full px-2.5 py-0.5 text-xs font-medium transition {activeCategory ===
+							'All'
 								? 'bg-primary text-primary-foreground'
 								: 'bg-surface-2 text-muted hover:text-foreground'}"
 						>
@@ -107,7 +136,8 @@
 							<button
 								type="button"
 								onclick={() => (activeCategory = c)}
-								class="rounded-full px-2.5 py-0.5 text-xs font-medium transition {activeCategory === c
+								class="rounded-full px-2.5 py-0.5 text-xs font-medium transition {activeCategory ===
+								c
 									? 'bg-primary text-primary-foreground'
 									: 'bg-surface-2 text-muted hover:text-foreground'}"
 							>
@@ -118,24 +148,32 @@
 				{/if}
 			</div>
 
-			<nav class="min-h-0 flex-1 overflow-y-auto p-2">
+			<nav class="min-h-0 flex-1 overflow-y-auto p-2" aria-label="Blog posts">
 				{#if visible.length === 0}
 					<p class="px-3 py-8 text-center text-sm text-muted">
-						{store.list.length === 0 ? 'No notes yet. Create your first one.' : 'No matches.'}
+						{store.list.length === 0 ? 'No posts yet.' : 'No matches.'}
 					</p>
 				{:else}
 					<ul class="space-y-0.5">
 						{#each visible as n (n.id)}
 							<li>
 								<a
-									href="/notes/{n.id}"
+									href={resolve('/blogs/[id]', { id: n.id })}
+									aria-current={activeId === n.id ? 'page' : undefined}
 									class="block rounded-lg px-3 py-2.5 transition {activeId === n.id
 										? 'bg-surface-2'
 										: 'hover:bg-surface-2'}"
 								>
 									<div class="flex items-center gap-1.5">
 										{#if n.pinned}
-											<svg class="shrink-0 text-primary" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+											<svg
+												class="shrink-0 text-primary"
+												width="12"
+												height="12"
+												viewBox="0 0 24 24"
+												fill="currentColor"
+												aria-hidden="true"
+											>
 												<path d="M16 3v2l-1 1v5l3 3v2h-5v5l-1 1-1-1v-5H5v-2l3-3V6L7 5V3z" />
 											</svg>
 										{/if}

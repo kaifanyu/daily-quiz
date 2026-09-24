@@ -7,12 +7,6 @@
 	import type { LayoutProps } from './$types';
 
 	let { children, data }: LayoutProps = $props();
-
-	// `/live` is a separate little site with its own retro chrome — it opts out
-	// of the quiz app's navigation and container entirely.
-	let standalone = $derived(
-		page.url.pathname === '/live' || page.url.pathname.startsWith('/live/')
-	);
 	let notebook = $derived(page.url.pathname === '/');
 	let quiz = $derived(
 		['/daily-quiz', '/quiz', '/history', '/sources', '/topics', '/prompts'].some(
@@ -26,17 +20,13 @@
 	<title>Labbook</title>
 </svelte:head>
 
-{#if standalone}
-	{@render children()}
-{:else}
-	<div class="site-shell" class:notebook-shell={notebook}>
-		<SiteNav access={data.notebookAccess} />
-		{#if quiz}<Nav />{/if}
-		<main id="site-content" class:contained={!notebook} tabindex="-1">
-			{@render children()}
-		</main>
-	</div>
-{/if}
+<div class="site-shell" class:notebook-shell={notebook}>
+	<SiteNav access={data.notebookAccess} />
+	{#if quiz}<Nav />{/if}
+	<main id="site-content" class:contained={!notebook} tabindex="-1">
+		{@render children()}
+	</main>
+</div>
 
 <style>
 	.site-shell {

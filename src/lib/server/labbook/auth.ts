@@ -107,7 +107,7 @@ export async function getNotebookAccess(event: RequestEvent): Promise<NotebookAc
 	}
 	const canEdit = local || owner;
 	return {
-		canRead: canEdit || notebookSetting(event.platform, 'LABBOOK_PUBLIC_READ') !== 'false',
+		canRead: true,
 		canEdit,
 		local,
 		loginConfigured
