@@ -15,6 +15,7 @@
 		"format": "prettier --write .",
 		"test:e2e": "playwright install && playwright test",
 		"test": "npm run test:e2e",
+		"test:corkboard": "node --experimental-strip-types --test src/lib/corkboard/board.test.mjs",
 		"gen": "wrangler types",
 		"storybook": "storybook dev -p 6006",
 		"build-storybook": "storybook build"

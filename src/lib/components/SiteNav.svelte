@@ -12,6 +12,7 @@
 	const links = [
 		{ href: '/', label: 'Papers', section: 'papers' },
 		{ href: '/#/concepts', label: 'Concepts', section: 'concepts' },
+		{ href: '/corkboard', label: 'Corkboard', section: 'corkboard' },
 		{ href: '/blogs', label: 'Blogs', section: 'blogs' },
 		{ href: '/daily-quiz', label: 'Daily Quiz', section: 'quiz' }
 	] as const;
@@ -27,7 +28,9 @@
 							(path) => page.url.pathname === path || page.url.pathname.startsWith(`${path}/`)
 					  )
 					? 'quiz'
-					: ''
+					: page.url.pathname === '/corkboard'
+						? 'corkboard'
+						: ''
 	);
 	function updateHash() {
 		browserHash = window.location.hash;
@@ -61,7 +64,7 @@
 			{#each links as link (link.section)}
 				<a
 					href={resolve(link.href)}
-					class:active={active === link.section}
+					class={{ active: active === link.section }}
 					aria-current={active === link.section ? 'page' : undefined}>{link.label}</a
 				>
 			{/each}
@@ -212,7 +215,7 @@
 			width: 100%;
 			margin: 0;
 			justify-content: space-between;
-			gap: 16px;
+			gap: 8px;
 		}
 		.site-links a {
 			justify-content: center;

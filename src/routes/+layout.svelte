@@ -8,6 +8,7 @@
 
 	let { children, data }: LayoutProps = $props();
 	let notebook = $derived(page.url.pathname === '/');
+	let corkboard = $derived(page.url.pathname === '/corkboard');
 	let quiz = $derived(
 		['/daily-quiz', '/quiz', '/history', '/sources', '/topics', '/prompts'].some(
 			(path) => page.url.pathname === path || page.url.pathname.startsWith(`${path}/`)
@@ -20,10 +21,14 @@
 	<title>Labbook</title>
 </svelte:head>
 
-<div class="site-shell" class:notebook-shell={notebook}>
+<div class={['site-shell', { 'notebook-shell': notebook, 'corkboard-shell': corkboard }]}>
 	<SiteNav access={data.notebookAccess} />
 	{#if quiz}<Nav />{/if}
-	<main id="site-content" class:contained={!notebook} tabindex="-1">
+	<main
+		id="site-content"
+		class={{ contained: !notebook && !corkboard, 'corkboard-main': corkboard }}
+		tabindex="-1"
+	>
 		{@render children()}
 	</main>
 </div>
@@ -50,6 +55,20 @@
 		--foreground: #304258;
 		--muted: #7d8999;
 		--primary-foreground: #fff;
+	}
+	.corkboard-shell {
+		display: flex;
+		flex-direction: column;
+		height: 100dvh;
+		min-height: 0;
+		overflow: hidden;
+	}
+	.corkboard-shell :global(.site-header) {
+		flex-shrink: 0;
+	}
+	.corkboard-main {
+		flex: 1;
+		min-height: 0;
 	}
 	.contained {
 		max-width: 1152px;
