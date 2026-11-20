@@ -547,7 +547,24 @@
 		else if (event.key === '1') fit();
 		else if (event.key === '?') helpOpen = !helpOpen;
 	}
-	async function addImage(file?: File) {
+	function pasteImage(event: ClipboardEvent) {
+		if (!loaded || importing || editorId || event.defaultPrevented) return;
+		const target = event.target;
+		if (
+			target instanceof HTMLElement &&
+			(target.isContentEditable || target.closest('input, textarea, select'))
+		)
+			return;
+		const file =
+			Array.from(event.clipboardData?.files ?? []).find((file) => file.type.startsWith('image/')) ??
+			Array.from(event.clipboardData?.items ?? [])
+				.find((item) => item.kind === 'file' && item.type.startsWith('image/'))
+				?.getAsFile();
+		if (!file) return;
+		event.preventDefault();
+		void addImage(file, centerPoint(), 'Pasted image');
+	}
+	async function addImage(file?: File, point?: Point, title?: string) {
 		if (!file || !loaded) return;
 		if (board.cards.length >= MAX_CARDS) {
 			error = 'This board is full. Remove a card before adding another image.';
@@ -562,6 +579,11 @@
 		}
 		try {
 			const bitmap = await createImageBitmap(file);
+			if (disposed || board.cards.length >= MAX_CARDS) {
+				bitmap.close();
+				if (!disposed) error = 'This board is full. Remove a card before adding another image.';
+				return;
+			}
 			const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
 			const canvas = document.createElement('canvas');
 			canvas.width = Math.round(bitmap.width * scale);
@@ -570,9 +592,9 @@
 			if (!context) throw new Error('Image conversion unavailable');
 			context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
 			bitmap.close();
-			const card = makeCard('image', centerPoint());
+			const card = makeCard('image', point ?? centerPoint());
 			card.image = canvas.toDataURL('image/webp', 0.85);
-			card.title = file.name.replace(/\.[^.]+$/, '').slice(0, 200);
+			card.title = title ?? file.name.replace(/\.[^.]+$/, '').slice(0, 200);
 			card.height = Math.min(520, Math.max(200, (216 * canvas.height) / canvas.width + 84));
 			if (card.image.length > 6_000_000) throw new Error('Image too large');
 			commit(() => {
@@ -580,7 +602,10 @@
 			});
 			selected = card.id;
 			selectedThread = null;
+			connectFrom = null;
 			tool = 'select';
+			error = '';
+			viewport.focus();
 		} catch {
 			error = 'That image could not be opened. Try a smaller PNG, JPEG, or WebP.';
 		}
@@ -650,6 +675,7 @@
 
 <svelte:window
 	onkeydown={keyDown}
+	onpaste={pasteImage}
 	onkeyup={(event) => {
 		if (event.code === 'Space') spaceHeld = false;
 	}}
@@ -1082,6 +1108,10 @@
 						<dd><kbd>C</kbd></dd>
 					</div>
 					<div>
+						<dt>Paste an image</dt>
+						<dd><kbd>Ctrl V</kbd> / <kbd>⌘ V</kbd></dd>
+					</div>
+					<div>
 						<dt>Fit everything</dt>
 						<dd><kbd>1</kbd></dd>
 					</div>
@@ -1180,7 +1210,7 @@
 				<button
 					class="tool-button"
 					aria-label="Add image"
-					title="Pin an image"
+					title="Pin an image or paste with Ctrl+V / ⌘V"
 					disabled={!loaded}
 					onclick={() => imageInput.click()}><Icon name="image" /><span>Image</span></button
 				>

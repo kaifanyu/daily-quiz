@@ -3,6 +3,7 @@
 Open **Corkboard** in the main navigation, or visit `/corkboard`.
 
 - Place sticky notes, paper links, and PNG/JPEG/WebP images.
+- Copy an image or screenshot, then press **Ctrl+V** (**⌘V** on Mac) on the board to pin it at the center of the current view. Pasted images support undo, autosave, and JSON backups. Pasting into a text field keeps normal text editing behavior.
 - Drag cards; double-click or press Enter on a focused card to edit. Selected cards have a resize handle; focus the handle and use arrow keys to resize with the keyboard.
 - Click two red pins, or drag between pins, to connect cards. Select a thread to delete it.
 - Drag the background to pan, scroll to zoom, or use the zoom controls. Hold Space to pan over cards. `1` fits all cards.
