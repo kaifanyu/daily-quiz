@@ -26,6 +26,8 @@ const cardSchema = z.object({
 	height: z.number().min(160).max(1200),
 	color: z.enum(COLORS),
 	showPin: z.boolean().optional(),
+	showFrame: z.boolean().optional(),
+	pin: z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }).optional(),
 	title: z.string().max(200),
 	text: z.string().max(20_000),
 	url: z
@@ -114,7 +116,66 @@ export function makeCard(kind: CardKind, point: Point): BoardCard {
 }
 
 export function pinPoint(card: BoardCard): Point {
-	return { x: card.x + card.width / 2, y: card.y + 18 };
+	return {
+		x: card.x + card.width * (card.pin?.x ?? 0.5),
+		y: card.y + (card.pin ? card.height * card.pin.y : 18)
+	};
+}
+
+export function pinAtPoint(card: BoardCard, point: Point): Point {
+	return {
+		x: Math.max(0, Math.min(1, (point.x - card.x) / card.width)),
+		y: Math.max(0, Math.min(1, (point.y - card.y) / card.height))
+	};
+}
+
+export function cardBounds(cards: BoardCard[]) {
+	if (!cards.length) return null;
+	const x = Math.min(...cards.map((card) => card.x));
+	const y = Math.min(...cards.map((card) => card.y));
+	return {
+		x,
+		y,
+		width: Math.max(...cards.map((card) => card.x + card.width)) - x,
+		height: Math.max(...cards.map((card) => card.y + card.height)) - y
+	};
+}
+
+export function moveCards(cards: BoardCard[], delta: Point): BoardCard[] {
+	if (!cards.length) return [];
+	const x = Math.max(
+		...cards.map((card) => -1_000_000 - card.x),
+		Math.min(delta.x, ...cards.map((card) => 1_000_000 - card.x))
+	);
+	const y = Math.max(
+		...cards.map((card) => -1_000_000 - card.y),
+		Math.min(delta.y, ...cards.map((card) => 1_000_000 - card.y))
+	);
+	return cards.map((card) => ({ ...card, x: card.x + x, y: card.y + y }));
+}
+
+/** Scale a selection around its top-left corner, keeping every card within the backup limits. */
+export function resizeCards(cards: BoardCard[], scale: number): BoardCard[] {
+	const bounds = cardBounds(cards);
+	if (!bounds) return [];
+	const minimum = Math.max(...cards.flatMap((card) => [180 / card.width, 160 / card.height]));
+	const maximum = Math.min(
+		...cards.flatMap((card) => [
+			1000 / card.width,
+			1200 / card.height,
+			card.x > bounds.x ? (1_000_000 - bounds.x) / (card.x - bounds.x) : Infinity,
+			card.y > bounds.y ? (1_000_000 - bounds.y) / (card.y - bounds.y) : Infinity
+		])
+	);
+	scale = Math.max(minimum, Math.min(maximum, scale));
+	return cards.map((card) => ({
+		...card,
+		x: bounds.x + (card.x - bounds.x) * scale,
+		y: bounds.y + (card.y - bounds.y) * scale,
+		width: Math.max(180, Math.min(1000, card.width * scale)),
+		height: Math.max(160, Math.min(1200, card.height * scale)),
+		pin: card.pin ?? { x: 0.5, y: 18 / card.height }
+	}));
 }
 
 export function threadPath(from: Point, to: Point): string {

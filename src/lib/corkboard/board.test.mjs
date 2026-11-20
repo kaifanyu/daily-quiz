@@ -2,12 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import {
+	cardBounds,
 	emptyBoard,
 	fitCamera,
 	makeCard,
+	moveCards,
 	parseBoard,
+	pinAtPoint,
 	pinPoint,
 	readBoardBackup,
+	resizeCards,
 	safeUrl,
 	serializeBoardBackup,
 	threadPath,
@@ -32,6 +36,8 @@ test('an exported board file round-trips with all content and its viewport intac
 	board.cards[0].height = 310;
 	const image = makeCard('image', { x: 300, y: 300 });
 	image.showPin = false;
+	image.showFrame = false;
+	image.pin = { x: 0.85, y: 0.6 };
 	image.image = `data:image/png;base64,${readFileSync(new URL('../../../static/corkboard/pin.png', import.meta.url)).toString('base64')}`;
 	board.cards.push(image);
 	board.threads.push({ id: 'thread-2', from: image.id, to: board.cards[1].id });
@@ -77,6 +83,12 @@ test('imports reject script URLs, SVG payloads, unsupported versions and invalid
 			board.cards[0].width = -1;
 		},
 		(board) => {
+			board.cards[0].pin = { x: 2, y: 0.5 };
+		},
+		(board) => {
+			board.cards[0].showFrame = 'false';
+		},
+		(board) => {
 			board.camera.zoom = 0;
 		},
 		(board) => {
@@ -112,6 +124,62 @@ test('imports reject orphan threads, self loops and duplicate IDs or connections
 		corrupt(board);
 		assert.throws(() => parseBoard(board));
 	}
+});
+
+test('pins clamp to their own card and remain attached after moving and resizing', () => {
+	const card = makeCard('image', { x: 300, y: 400 });
+	assert.deepEqual(pinPoint(card), { x: card.x + 120, y: card.y + 18 });
+	card.pin = pinAtPoint(card, { x: card.x + 180, y: card.y + 110 });
+	assert.deepEqual(card.pin, { x: 0.75, y: 0.5 });
+	card.x += 100;
+	card.y -= 60;
+	card.width *= 2;
+	card.height *= 2;
+	assert.deepEqual(pinPoint(card), { x: card.x + 360, y: card.y + 220 });
+	assert.deepEqual(pinAtPoint(card, { x: -1e9, y: 1e9 }), { x: 0, y: 1 });
+});
+
+test('moving a group preserves spacing and clamps the entire group at board limits', () => {
+	const board = connectedBoard();
+	const original = structuredClone(board.cards);
+	const moved = moveCards(board.cards, { x: 83, y: -42 });
+	for (let i = 0; i < moved.length; i++) {
+		assert.equal(moved[i].x, original[i].x + 83);
+		assert.equal(moved[i].y, original[i].y - 42);
+	}
+	const limited = moveCards(board.cards, { x: 1e9, y: -1e9 });
+	assert.equal(Math.max(...limited.map((card) => card.x)), 1_000_000);
+	assert.equal(Math.min(...limited.map((card) => card.y)), -1_000_000);
+	assert.equal(limited[1].x - limited[0].x, original[1].x - original[0].x);
+	assert.equal(limited[1].y - limited[0].y, original[1].y - original[0].y);
+	assert.deepEqual(board.cards, original);
+	parseBoard({ ...board, cards: limited });
+});
+
+test('group resizing scales geometry and pin anchors together and respects every size limit', () => {
+	const board = connectedBoard();
+	board.cards[1].pin = { x: 0.25, y: 0.8 };
+	const original = structuredClone(board.cards);
+	const bounds = cardBounds(original);
+	for (const requested of [0.001, 0.9, 1.5, 1000]) {
+		const resized = resizeCards(original, requested);
+		const factor = resized[0].width / original[0].width;
+		for (let i = 0; i < resized.length; i++) {
+			const card = resized[i],
+				before = original[i];
+			assert.ok(Math.abs(card.width / before.width - factor) < 1e-10);
+			assert.ok(Math.abs(card.height / before.height - factor) < 1e-10);
+			assert.ok(Math.abs(card.x - (bounds.x + (before.x - bounds.x) * factor)) < 1e-10);
+			assert.ok(Math.abs(card.y - (bounds.y + (before.y - bounds.y) * factor)) < 1e-10);
+			const pin = pinPoint(card),
+				priorPin = pinPoint(before);
+			assert.ok(Math.abs(pin.x - (bounds.x + (priorPin.x - bounds.x) * factor)) < 1e-10);
+			assert.ok(Math.abs(pin.y - (bounds.y + (priorPin.y - bounds.y) * factor)) < 1e-10);
+		}
+		parseBoard({ ...board, cards: resized });
+	}
+	assert.deepEqual(board.cards, original);
+	assert.deepEqual(resizeCards([], 2), []);
 });
 
 test('zoom keeps the world point under the cursor stationary, including at zoom limits', () => {

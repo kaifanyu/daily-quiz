@@ -7,12 +7,16 @@
 		MAX_CARDS,
 		MAX_ZOOM,
 		MIN_ZOOM,
+		cardBounds,
 		emptyBoard,
 		fitCamera,
 		loadBoard,
 		makeCard,
+		moveCards,
+		pinAtPoint,
 		pinPoint,
 		readBoardBackup,
+		resizeCards,
 		safeUrl,
 		saveBoard,
 		serializeBoardBackup,
@@ -27,12 +31,13 @@
 
 	type Tool = 'select' | 'hand' | 'note' | 'thread';
 	type Gesture = {
-		kind: 'pan' | 'move' | 'resize' | 'thread';
+		kind: 'pan' | 'move' | 'resize' | 'thread' | 'pin';
 		pointer: number;
 		start: Point;
 		origin: Point;
 		before: Board;
 		cardId?: string;
+		cardIds: string[];
 		moved: boolean;
 	};
 	let board = $state<Board>(emptyBoard());
@@ -40,7 +45,7 @@
 	let status = $state('Loading board…');
 	let error = $state('');
 	let tool = $state<Tool>('select');
-	let selected = $state<string | null>(null);
+	let selectedIds = $state<string[]>([]);
 	let selectedThread = $state<string | null>(null);
 	let connectFrom = $state<string | null>(null);
 	let pointer = $state<Point>({ x: 0, y: 0 });
@@ -54,7 +59,8 @@
 		text: '',
 		url: '',
 		color: 'yellow' as BoardCard['color'],
-		showPin: true
+		showPin: true,
+		showFrame: true
 	});
 	let helpOpen = $state(false);
 	let importing = $state(false);
@@ -69,7 +75,9 @@
 	let pinch: { distance: number; center: Point; camera: Board['camera'] } | null = null;
 	let dragCompleted = false;
 
-	const selectedCard = $derived(board.cards.find((card) => card.id === selected));
+	const selectedCards = $derived(board.cards.filter((card) => selectedIds.includes(card.id)));
+	const selectedCard = $derived(selectedCards.length === 1 ? selectedCards[0] : undefined);
+	const selectionBounds = $derived(selectedCards.length > 1 ? cardBounds(selectedCards) : null);
 	const editingCard = $derived(board.cards.find((card) => card.id === editorId));
 	const sourceCard = $derived(board.cards.find((card) => card.id === connectFrom));
 	const cardMap = $derived(new Map(board.cards.map((card) => [card.id, card])));
@@ -82,7 +90,9 @@
 					? 'Click the cork or press Enter to place a note.'
 					: tool === 'hand'
 						? 'Drag or use the arrow keys to move around the board.'
-						: 'Drag to arrange · Double-click to edit · Scroll to zoom'
+						: selectedCards.length > 1
+							? `${selectedCards.length} items selected · Drag any item to move · Drag the corner to resize`
+							: 'Drag to arrange · Double-click to edit · Ctrl+A to select all'
 	);
 
 	function snapshot(): Board {
@@ -134,7 +144,7 @@
 		persist();
 	}
 	function clearSelection() {
-		selected = null;
+		selectedIds = [];
 		selectedThread = null;
 		connectFrom = null;
 	}
@@ -166,7 +176,7 @@
 	}
 
 	function editCard(card: BoardCard) {
-		selected = card.id;
+		selectedIds = [card.id];
 		selectedThread = null;
 		connectFrom = null;
 		tool = 'select';
@@ -176,7 +186,8 @@
 			text: card.text,
 			url: card.url,
 			color: card.color,
-			showPin: card.showPin !== false
+			showPin: card.showPin !== false,
+			showFrame: card.showFrame !== false
 		};
 		editorId = card.id;
 	}
@@ -212,7 +223,7 @@
 		if (!loaded) return;
 		if (!connectFrom) {
 			connectFrom = to;
-			selected = null;
+			selectedIds = [];
 			selectedThread = null;
 			return;
 		}
@@ -239,12 +250,12 @@
 		connectFrom = null;
 	}
 	function removeSelected() {
-		if (!selected && !selectedThread) return;
+		if (!selectedIds.length && !selectedThread) return;
 		commit(() => {
-			if (selected) {
-				board.cards = board.cards.filter((card) => card.id !== selected);
+			if (selectedIds.length) {
+				board.cards = board.cards.filter((card) => !selectedIds.includes(card.id));
 				board.threads = board.threads.filter(
-					(thread) => thread.from !== selected && thread.to !== selected
+					(thread) => !selectedIds.includes(thread.from) && !selectedIds.includes(thread.to)
 				);
 			} else board.threads = board.threads.filter((thread) => thread.id !== selectedThread);
 		});
@@ -262,7 +273,22 @@
 		commit(() => {
 			board.cards.push(card);
 		});
-		selected = card.id;
+		selectedIds = [card.id];
+	}
+	function applyCards(cards: BoardCard[]) {
+		const replacements = new Map(cards.map((card) => [card.id, card]));
+		board.cards = board.cards.map((card) => replacements.get(card.id) ?? card);
+	}
+	function nudgeSelection(event: KeyboardEvent) {
+		const amount = event.shiftKey ? 20 : 5;
+		commit(() =>
+			applyCards(
+				moveCards(selectedCards, {
+					x: event.key === 'ArrowLeft' ? -amount : event.key === 'ArrowRight' ? amount : 0,
+					y: event.key === 'ArrowUp' ? -amount : event.key === 'ArrowDown' ? amount : 0
+				})
+			)
+		);
 	}
 	function zoom(
 		factor: number,
@@ -302,11 +328,16 @@
 		}
 		const before = snapshot();
 		if (kind === 'move' && card) {
-			selected = card.id;
+			if (!selectedIds.includes(card.id)) selectedIds = [card.id];
 			selectedThread = null;
-			// Move the active card to the front without changing its coordinates.
-			board.cards = [...board.cards.filter((item) => item.id !== card.id), card];
+			connectFrom = null;
+			// Keep the selected cards together in the stacking order.
+			board.cards = [
+				...board.cards.filter((item) => !selectedIds.includes(item.id)),
+				...selectedCards
+			];
 		}
+		if (kind === 'pin') connectFrom = null;
 		gesture = {
 			kind,
 			pointer: event.pointerId,
@@ -316,11 +347,14 @@
 					? { x: board.camera.x, y: board.camera.y }
 					: kind === 'resize' && card
 						? { x: card.width, y: card.height }
-						: card
-							? { x: card.x, y: card.y }
-							: { x: 0, y: 0 },
+						: kind === 'pin' && card
+							? pinPoint(card)
+							: card
+								? { x: card.x, y: card.y }
+								: { x: 0, y: 0 },
 			before,
 			cardId: card?.id,
+			cardIds: [...selectedIds],
 			moved: false
 		};
 		// Preserve native clicks and double-clicks until the card actually moves.
@@ -333,7 +367,7 @@
 			center: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
 			camera: { ...board.camera }
 		};
-		if (gesture?.moved && (gesture.kind === 'move' || gesture.kind === 'resize'))
+		if (gesture?.moved && ['move', 'resize', 'pin'].includes(gesture.kind))
 			remember(gesture.before);
 		gesture = null;
 		connectFrom = null;
@@ -368,9 +402,18 @@
 			event.stopPropagation();
 			return;
 		}
+		if (event.shiftKey && event.button === 0) {
+			event.stopPropagation();
+			selectedIds = selectedIds.includes(card.id)
+				? selectedIds.filter((id) => id !== card.id)
+				: [...selectedIds, card.id];
+			selectedThread = null;
+			connectFrom = null;
+			return;
+		}
 		startGesture(event, 'move', card);
 	}
-	function cardClick(card: BoardCard) {
+	function cardClick(event: MouseEvent, card: BoardCard) {
 		if (dragCompleted) {
 			dragCompleted = false;
 			return;
@@ -380,7 +423,8 @@
 			pointer = pinPoint(card);
 			return;
 		}
-		selected = card.id;
+		if (event.shiftKey || tool === 'hand' || spaceHeld) return;
+		if (!selectedIds.includes(card.id)) selectedIds = [card.id];
 		selectedThread = null;
 	}
 	function pinDown(event: PointerEvent, card: BoardCard) {
@@ -388,7 +432,7 @@
 			startGesture(event, 'pan');
 			return;
 		}
-		startGesture(event, 'thread', card);
+		startGesture(event, tool === 'thread' || connectFrom ? 'thread' : 'pin', card);
 		pointer = pinPoint(card);
 	}
 	function pointerMove(event: PointerEvent) {
@@ -422,13 +466,30 @@
 		}
 		if (gesture.kind === 'thread') connectFrom = gesture.cardId ?? null;
 		const card = board.cards.find((item) => item.id === gesture?.cardId);
-		if (card && gesture.kind === 'move') {
-			card.x = Math.max(-1_000_000, Math.min(1_000_000, gesture.origin.x + dx / board.camera.zoom));
-			card.y = Math.max(-1_000_000, Math.min(1_000_000, gesture.origin.y + dy / board.camera.zoom));
+		const originals = gesture.before.cards.filter((item) => gesture?.cardIds.includes(item.id));
+		if (gesture.kind === 'move') {
+			applyCards(moveCards(originals, { x: dx / board.camera.zoom, y: dy / board.camera.zoom }));
 		}
 		if (card && gesture.kind === 'resize') {
 			card.width = Math.min(1000, Math.max(180, gesture.origin.x + dx / board.camera.zoom));
 			card.height = Math.min(1200, Math.max(160, gesture.origin.y + dy / board.camera.zoom));
+		} else if (gesture.kind === 'resize') {
+			const bounds = cardBounds(originals);
+			if (bounds)
+				applyCards(
+					resizeCards(
+						originals,
+						1 +
+							(bounds.width * dx + bounds.height * dy) /
+								(board.camera.zoom * (bounds.width ** 2 + bounds.height ** 2))
+					)
+				);
+		}
+		if (card && gesture.kind === 'pin') {
+			card.pin = pinAtPoint(card, {
+				x: gesture.origin.x + dx / board.camera.zoom,
+				y: gesture.origin.y + dy / board.camera.zoom
+			});
 		}
 	}
 	function pointerUp(event: PointerEvent) {
@@ -454,6 +515,8 @@
 				if (targetId && targetId !== current.cardId) connect(targetId);
 				else connectFrom = null;
 			} else if (current.cardId) connect(current.cardId);
+		} else if (current.kind === 'pin' && !current.moved && current.cardId) {
+			connect(current.cardId);
 		} else if (current.moved) {
 			dragCompleted = current.kind !== 'pan';
 			if (current.kind === 'pan') persist();
@@ -475,23 +538,8 @@
 		if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
 			event.preventDefault();
 			event.stopPropagation();
-			const amount = event.shiftKey ? 20 : 5;
-			commit(() => {
-				card.x = Math.max(
-					-1_000_000,
-					Math.min(
-						1_000_000,
-						card.x + (event.key === 'ArrowLeft' ? -amount : event.key === 'ArrowRight' ? amount : 0)
-					)
-				);
-				card.y = Math.max(
-					-1_000_000,
-					Math.min(
-						1_000_000,
-						card.y + (event.key === 'ArrowUp' ? -amount : event.key === 'ArrowDown' ? amount : 0)
-					)
-				);
-			});
+			if (!selectedIds.includes(card.id)) selectedIds = [card.id];
+			nudgeSelection(event);
 		} else if (event.key === 'Enter' && tool !== 'thread') {
 			event.preventDefault();
 			void editCard(card);
@@ -503,12 +551,23 @@
 		if (event.key === 'Escape') {
 			cancelGesture();
 			closeEditor();
+			clearSelection();
 			helpOpen = false;
 			tool = 'select';
 			return;
 		}
 		if (target.closest('input, textarea, select, [contenteditable="true"]') || editorId) return;
 		const modifier = event.ctrlKey || event.metaKey;
+		if (modifier && event.key.toLowerCase() === 'a') {
+			event.preventDefault();
+			selectedIds = board.cards.map((card) => card.id);
+			selectedThread = null;
+			connectFrom = null;
+			tool = 'select';
+			helpOpen = false;
+			viewport.focus();
+			return;
+		}
 		if (modifier && event.key.toLowerCase() === 'z') {
 			event.preventDefault();
 			event.shiftKey ? redo() : undo();
@@ -535,6 +594,10 @@
 			['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)
 		) {
 			event.preventDefault();
+			if (selectedIds.length && tool === 'select') {
+				nudgeSelection(event);
+				return;
+			}
 			const step = event.shiftKey ? 150 : 50;
 			board.camera.x += event.key === 'ArrowLeft' ? step : event.key === 'ArrowRight' ? -step : 0;
 			board.camera.y += event.key === 'ArrowUp' ? step : event.key === 'ArrowDown' ? -step : 0;
@@ -612,7 +675,7 @@
 			commit(() => {
 				board.cards.push(card);
 			});
-			selected = card.id;
+			selectedIds = [card.id];
 			selectedThread = null;
 			connectFrom = null;
 			tool = 'select';
@@ -795,7 +858,11 @@
 				<div
 					class={[
 						'board-card',
-						{ chosen: selected === card.id, 'thread-source': connectFrom === card.id }
+						{
+							chosen: selectedIds.includes(card.id),
+							'thread-source': connectFrom === card.id,
+							frameless: card.kind === 'image' && card.showFrame === false
+						}
 					]}
 					data-color={card.color}
 					data-kind={card.kind}
@@ -808,9 +875,9 @@
 						class="card-face"
 						data-card={card.id}
 						aria-label={`${cardName(card)}. ${card.kind}. Enter to edit, arrow keys to move.`}
-						aria-pressed={selected === card.id}
+						aria-pressed={selectedIds.includes(card.id)}
 						onpointerdown={(event) => cardDown(event, card)}
-						onclick={() => cardClick(card)}
+						onclick={(event) => cardClick(event, card)}
 						ondblclick={() => {
 							if (tool !== 'thread' && tool !== 'hand') void editCard(card);
 						}}
@@ -826,14 +893,14 @@
 						{:else if card.kind === 'paper'}
 							<span class="paper-type"><Icon name="paper" size={16} /> Paper / link</span>
 						{/if}
-						<strong class="card-title"
-							>{card.title ||
-								(card.kind === 'paper'
-									? 'Untitled paper'
-									: card.kind === 'image'
-										? 'Image'
-										: 'A new thought')}</strong
-						>
+						{#if card.kind !== 'image' || card.showFrame !== false}<strong class="card-title"
+								>{card.title ||
+									(card.kind === 'paper'
+										? 'Untitled paper'
+										: card.kind === 'image'
+											? 'Image'
+											: 'A new thought')}</strong
+							>{/if}
 						{#if card.kind !== 'image'}<span
 								class="card-text"
 								style={`-webkit-line-clamp: ${Math.max(1, Math.floor((card.height - (card.kind === 'paper' ? 200 : 134)) / 25))}`}
@@ -846,7 +913,7 @@
 								><Icon name="link" size={14} />{new URL(card.url).hostname}</span
 							>{/if}
 					</button>
-					{#if selected === card.id && tool !== 'thread'}
+					{#if selectedCard?.id === card.id && tool !== 'thread'}
 						<button
 							class="resize-handle"
 							aria-label={`Resize ${cardName(card)}`}
@@ -880,6 +947,32 @@
 					{/if}
 				</div>
 			{/each}
+			{#if selectionBounds && tool === 'select'}
+				<div
+					class="group-selection"
+					style:--selection-ui-scale={1 / board.camera.zoom}
+					style:left={`${selectionBounds.x - 8}px`}
+					style:top={`${selectionBounds.y - 8}px`}
+					style:width={`${selectionBounds.width + 16}px`}
+					style:height={`${selectionBounds.height + 16}px`}
+				>
+					<span class="selection-count">{selectedCards.length} items selected</span>
+					<button
+						class="resize-handle group-resize"
+						data-chrome
+						aria-label="Resize selected items"
+						title="Drag to resize together; arrow keys resize in steps"
+						onpointerdown={(event) => startGesture(event, 'resize')}
+						onkeydown={(event) => {
+							if (!event.key.startsWith('Arrow')) return;
+							event.preventDefault();
+							event.stopPropagation();
+							const factor = ['ArrowLeft', 'ArrowUp'].includes(event.key) ? 0.95 : 1.05;
+							commit(() => applyCards(resizeCards(selectedCards, factor)));
+						}}><Icon name="resize" size={18} /></button
+					>
+				</div>
+			{/if}
 			<svg class="thread-layer" aria-label="Red thread connections">
 				{#each board.threads as thread (thread.id)}
 					{@const from = cardMap.get(thread.from)}
@@ -901,13 +994,13 @@
 							onclick={(event) => {
 								event.stopPropagation();
 								selectedThread = thread.id;
-								selected = null;
+								selectedIds = [];
 							}}
 							onkeydown={(event) => {
 								if (event.key === 'Enter' || event.key === ' ') {
 									event.preventDefault();
 									selectedThread = thread.id;
-									selected = null;
+									selectedIds = [];
 								}
 							}}
 						/>
@@ -926,8 +1019,25 @@
 						style:left={`${pinPoint(card).x - 22}px`}
 						style:top={`${pinPoint(card).y - 29}px`}
 						aria-label={`Connect pin: ${cardName(card)}`}
-						title="Click two pins or drag between them to connect"
+						title="Drag to reposition this pin. Click two pins to connect, or drag in the Thread tool."
 						onpointerdown={(event) => pinDown(event, card)}
+						onkeydown={(event) => {
+							if (!event.key.startsWith('Arrow')) return;
+							event.preventDefault();
+							event.stopPropagation();
+							const point = pinPoint(card);
+							const amount = event.shiftKey ? 20 : 5;
+							commit(() => {
+								card.pin = pinAtPoint(card, {
+									x:
+										point.x +
+										(event.key === 'ArrowLeft' ? -amount : event.key === 'ArrowRight' ? amount : 0),
+									y:
+										point.y +
+										(event.key === 'ArrowUp' ? -amount : event.key === 'ArrowDown' ? amount : 0)
+								});
+							});
+						}}
 						onclick={(event) => {
 							if (event.detail === 0) {
 								pointer = pinPoint(card);
@@ -980,7 +1090,7 @@
 				class="board-icon-button delete-button"
 				aria-label="Delete selection"
 				title="Delete selection (Delete)"
-				disabled={!selected && !selectedThread}
+				disabled={!selectedIds.length && !selectedThread}
 				onclick={removeSelected}><Icon name="trash" size={18} /></button
 			>
 			{#if selectedCard?.url}<a
@@ -1060,6 +1170,10 @@
 						placeholder="What stands out? What does it connect to?"></textarea>
 					{#if editingCard.kind === 'image'}
 						<label class="image-pin-option">
+							<input type="checkbox" bind:checked={draft.showFrame} />
+							Show border and title
+						</label>
+						<label class="image-pin-option">
 							<input type="checkbox" bind:checked={draft.showPin} />
 							<span>Show red pin</span>
 						</label>
@@ -1110,10 +1224,19 @@
 					it.
 				</p>
 				<p>
-					<strong>Follow the thread.</strong> Click two red pins, or drag from one pin to another. Connections
-					follow your cards.
+					<strong>Arrange together.</strong> Select all with Ctrl+A (⌘A on Mac), or Shift-click to select
+					several items. Drag any selected item to move the group; drag its outer corner to resize everything
+					together.
+				</p>
+				<p>
+					<strong>Follow the thread.</strong> Drag a red pin to reposition it on its card. Click two pins
+					to connect, or use the Thread tool to drag a connection. Pins and threads follow your cards.
 				</p>
 				<dl>
+					<div>
+						<dt>Select all items</dt>
+						<dd><kbd>Ctrl A</kbd> / <kbd>⌘ A</kbd></dd>
+					</div>
 					<div>
 						<dt>Select / move</dt>
 						<dd><kbd>V</kbd></dd>
@@ -1143,7 +1266,7 @@
 						<dd>Scroll / <kbd>+</kbd> <kbd>−</kbd></dd>
 					</div>
 					<div>
-						<dt>Move focused card</dt>
+						<dt>Move selection / pin</dt>
 						<dd>Arrow keys</dd>
 					</div>
 					<div>

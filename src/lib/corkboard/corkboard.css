@@ -287,6 +287,42 @@
 	text-align: center;
 	-webkit-line-clamp: 2;
 }
+.board-card.frameless {
+	background: transparent;
+	box-shadow: none;
+}
+.board-card.frameless .card-face {
+	padding: 0;
+}
+.board-card.frameless .pinned-image {
+	height: 100%;
+	margin: 0;
+}
+.group-selection {
+	position: absolute;
+	outline: calc(1.5px * var(--selection-ui-scale)) dashed var(--thread);
+	pointer-events: none;
+	z-index: 2;
+}
+.selection-count {
+	position: absolute;
+	right: 0;
+	bottom: calc(100% + 8px);
+	padding: 4px 8px;
+	background: var(--thread);
+	color: #fffdf5;
+	font-size: 0.75rem;
+	font-weight: 600;
+	white-space: nowrap;
+	transform: scale(var(--selection-ui-scale));
+	transform-origin: bottom right;
+}
+.group-selection .group-resize {
+	width: 32px;
+	height: 32px;
+	pointer-events: auto;
+	transform: scale(var(--selection-ui-scale));
+}
 .resize-handle {
 	position: absolute;
 	right: -3px;
@@ -348,7 +384,7 @@
 	padding: 0;
 	border: 0;
 	background: transparent;
-	cursor: crosshair !important;
+	cursor: grab !important;
 	z-index: 1;
 	touch-action: none;
 }
@@ -362,6 +398,12 @@
 .card-pin.pin-active {
 	outline: 2px solid #fff5e4;
 	border-radius: 50%;
+}
+.card-pin:active {
+	cursor: grabbing !important;
+}
+.connecting .card-pin {
+	cursor: crosshair !important;
 }
 .board-panel {
 	background: var(--board-chrome);
