@@ -25,6 +25,7 @@ const cardSchema = z.object({
 	width: z.number().min(180).max(1000),
 	height: z.number().min(160).max(1200),
 	color: z.enum(COLORS),
+	showPin: z.boolean().optional(),
 	title: z.string().max(200),
 	text: z.string().max(20_000),
 	url: z

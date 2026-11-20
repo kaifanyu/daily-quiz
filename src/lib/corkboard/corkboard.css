@@ -480,7 +480,7 @@
 	font-size: 0.875rem;
 	margin: 14px 0 6px;
 }
-.board-inspector input:not([type='radio']),
+.board-inspector input:not([type='radio']):not([type='checkbox']),
 .board-inspector textarea {
 	width: 100%;
 	padding: 9px 10px;
@@ -545,6 +545,24 @@
 	justify-content: flex-end;
 	gap: 8px;
 	margin-top: 24px;
+}
+.board-inspector label.image-pin-option {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 32px;
+	cursor: pointer;
+}
+.image-pin-option input {
+	width: 18px;
+	height: 18px;
+	accent-color: var(--thread);
+}
+.image-pin-hint {
+	margin: 0;
+	color: var(--board-muted);
+	font-size: 0.75rem;
+	line-height: 1.5;
 }
 .help-panel p {
 	margin: 0 0 16px;

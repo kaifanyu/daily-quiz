@@ -49,7 +49,13 @@
 	let past = $state.raw<Board[]>([]);
 	let future = $state.raw<Board[]>([]);
 	let editorId = $state<string | null>(null);
-	let draft = $state({ title: '', text: '', url: '', color: 'yellow' as BoardCard['color'] });
+	let draft = $state({
+		title: '',
+		text: '',
+		url: '',
+		color: 'yellow' as BoardCard['color'],
+		showPin: true
+	});
 	let helpOpen = $state(false);
 	let importing = $state(false);
 	let viewport: HTMLDivElement;
@@ -165,7 +171,13 @@
 		connectFrom = null;
 		tool = 'select';
 		helpOpen = false;
-		draft = { title: card.title, text: card.text, url: card.url, color: card.color };
+		draft = {
+			title: card.title,
+			text: card.text,
+			url: card.url,
+			color: card.color,
+			showPin: card.showPin !== false
+		};
 		editorId = card.id;
 	}
 	function closeEditor() {
@@ -907,21 +919,23 @@
 					/>{/if}
 			</svg>
 			{#each board.cards as card (card.id)}
-				<button
-					class={['card-pin', { 'pin-active': connectFrom === card.id }]}
-					data-pin={card.id}
-					style:left={`${pinPoint(card).x - 22}px`}
-					style:top={`${pinPoint(card).y - 29}px`}
-					aria-label={`Connect pin: ${cardName(card)}`}
-					title="Click two pins or drag between them to connect"
-					onpointerdown={(event) => pinDown(event, card)}
-					onclick={(event) => {
-						if (event.detail === 0) {
-							pointer = pinPoint(card);
-							connect(card.id);
-						}
-					}}><img src="/corkboard/pin.png" alt="" draggable="false" /></button
-				>
+				{#if card.kind !== 'image' || card.showPin !== false || tool === 'thread' || connectFrom}
+					<button
+						class={['card-pin', { 'pin-active': connectFrom === card.id }]}
+						data-pin={card.id}
+						style:left={`${pinPoint(card).x - 22}px`}
+						style:top={`${pinPoint(card).y - 29}px`}
+						aria-label={`Connect pin: ${cardName(card)}`}
+						title="Click two pins or drag between them to connect"
+						onpointerdown={(event) => pinDown(event, card)}
+						onclick={(event) => {
+							if (event.detail === 0) {
+								pointer = pinPoint(card);
+								connect(card.id);
+							}
+						}}><img src="/corkboard/pin.png" alt="" draggable="false" /></button
+					>
+				{/if}
 			{/each}
 		</div>
 
@@ -1044,6 +1058,15 @@
 						rows="6"
 						maxlength="20000"
 						placeholder="What stands out? What does it connect to?"></textarea>
+					{#if editingCard.kind === 'image'}
+						<label class="image-pin-option">
+							<input type="checkbox" bind:checked={draft.showPin} />
+							<span>Show red pin</span>
+						</label>
+						<p class="image-pin-hint">
+							Connections stay attached. Hidden pins appear while connecting.
+						</p>
+					{/if}
 					<fieldset class="note-colors">
 						<legend>Paper color</legend>{#each COLORS as color (color)}<label
 								class="color-option"

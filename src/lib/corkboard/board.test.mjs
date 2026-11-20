@@ -31,6 +31,7 @@ test('an exported board file round-trips with all content and its viewport intac
 	board.cards[0].width = 360;
 	board.cards[0].height = 310;
 	const image = makeCard('image', { x: 300, y: 300 });
+	image.showPin = false;
 	image.image = `data:image/png;base64,${readFileSync(new URL('../../../static/corkboard/pin.png', import.meta.url)).toString('base64')}`;
 	board.cards.push(image);
 	board.threads.push({ id: 'thread-2', from: image.id, to: board.cards[1].id });
